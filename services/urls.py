@@ -44,6 +44,17 @@ urlpatterns = [
     path('platform/revenue/', views.platform_revenue_dashboard_view, name='platform_revenue'),
     path('platform/revenue/transactions/', views.platform_revenue_transactions_view, name='platform_revenue_transactions'),
     path('platform/revenue/evidence/', views.platform_revenue_evidence_view, name='platform_revenue_evidence'),
+    path('platform/payments/', views.platform_payments_dashboard_view, name='platform_payments'),
+
+    # Stage 8A: Customer Checkout, Payments & Provider Settlements
+    path('checkout/<int:booking_id>/', views.checkout_view, name='checkout'),
+    path('payments/create/<int:booking_id>/', views.payment_create_view, name='payment_create'),
+    path('payments/success/<int:booking_id>/', views.payment_success_view, name='payment_success'),
+    path('payments/failed/<int:booking_id>/', views.payment_failed_view, name='payment_failed'),
+    path('payments/webhook/', views.payment_webhook_view, name='payment_webhook'),
+    path('payments/history/', views.customer_payment_history_view, name='customer_payment_history'),
+    path('provider/payout-settings/', views.provider_payout_settings_view, name='provider_payout_settings'),
+    path('provider/settlements/', views.provider_settlements_view, name='provider_settlements'),
 
     # Academic requirements: JSON API and re_path
     path('api/services/', views.api_services_list, name='api_services_list'),

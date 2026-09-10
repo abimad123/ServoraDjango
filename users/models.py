@@ -22,6 +22,42 @@ class UserProfile(models.Model):
     bio = models.TextField(blank=True, default='')
     is_verified = models.BooleanField(default=False, help_text="Designates whether this provider has been verified.")
     avatar = models.ImageField(upload_to='profiles/', blank=True, null=True)
+
+    # Stage 8A: Provider Payout & Settlement Configuration
+    PAYOUT_STATUS_CHOICES = (
+        ('not_configured', 'Not Configured'),
+        ('configured', 'Configured'),
+        ('verification_required', 'Verification Required'),
+        ('ready', 'Ready for Payout'),
+    )
+    PAYOUT_PREFERENCE_CHOICES = (
+        ('upi', 'UPI Transfer'),
+        ('bank', 'Bank Transfer'),
+    )
+
+    payout_upi_id = models.CharField(
+        max_length=100, 
+        blank=True, 
+        default='', 
+        help_text="Private provider UPI ID for electronic settlement disbursements."
+    )
+    payout_upi_name = models.CharField(
+        max_length=150, 
+        blank=True, 
+        default='', 
+        help_text="Beneficiary name associated with UPI ID."
+    )
+    payout_preference = models.CharField(
+        max_length=30, 
+        choices=PAYOUT_PREFERENCE_CHOICES, 
+        default='upi'
+    )
+    payout_status = models.CharField(
+        max_length=30, 
+        choices=PAYOUT_STATUS_CHOICES, 
+        default='not_configured'
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

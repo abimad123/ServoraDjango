@@ -1,0 +1,107 @@
+{% extends "provider/base_provider.html" %}
+
+{% block title %}Payout Settings – Servora Workspace{% endblock %}
+
+{% block provider_content %}
+<div class="provider-topbar">
+  <div class="provider-greeting">
+    <h1>Payout & Disbursement Settings</h1>
+    <p>Configure your UPI Virtual Payment Address (VPA) or bank routing details to receive 90% service earnings.</p>
+  </div>
+</div>
+
+<div style="max-width: 800px;">
+  <!-- Security Warning Banner -->
+  <div style="background: #FEF2F2; border: 1px solid #FCA5A5; border-radius: 12px; padding: 18px 22px; margin-bottom: 28px; display: flex; align-items: flex-start; gap: 14px;">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 2px;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+    <div>
+      <strong style="color: #991B1B; font-size: 0.95rem; display: block; margin-bottom: 4px;">CRITICAL SECURITY NOTICE:</strong>
+      <span style="color: #B91C1C; font-size: 0.88rem; line-height: 1.5;">
+        Never enter your <strong>UPI PIN, OTP, ATM PIN, or Internet Banking password</strong>. Servora will never ask for your secret authorization credentials. Your UPI ID is strictly an inbound receiving address for direct settlements.
+      </span>
+    </div>
+  </div>
+
+  <!-- Payout Status Overview Card -->
+  <div class="dashboard-card" style="margin-bottom: 28px; padding: 24px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+      <div>
+        <span style="font-size: 0.78rem; font-weight: 700; color: #64748B; text-transform: uppercase;">Current Payout Status</span>
+        <div style="margin-top: 4px;">
+          {% if profile.payout_status == 'ready' or profile.payout_status == 'configured' %}
+            <span style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; background: #ECFDF5; color: #059669; border-radius: 9999px; font-weight: 800; font-size: 0.85rem;">
+              <span style="width: 8px; height: 8px; border-radius: 50%; background: #10B981;"></span>
+              Ready for Payout Disbursements
+            </span>
+          {% else %}
+            <span style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; background: #FFFBEB; color: #D97706; border-radius: 9999px; font-weight: 800; font-size: 0.85rem;">
+              <span style="width: 8px; height: 8px; border-radius: 50%; background: #F59E0B;"></span>
+              Payout Configuration Required
+            </span>
+          {% endif %}
+        </div>
+      </div>
+      <div style="font-size: 0.85rem; color: #64748B; max-width: 320px; text-align: right;">
+        Servora disburses <strong>90%</strong> of completed booking value directly to your verified payout handle after 10% platform commission deduction.
+      </div>
+    </div>
+  </div>
+
+  <!-- Configuration Form -->
+  <div class="dashboard-card" style="padding: 28px;">
+    <h3 style="font-size: 1.15rem; font-weight: 800; color: #1E293B; margin: 0 0 20px;">
+      Direct Disbursement Details
+    </h3>
+
+    <form method="POST">
+      {% csrf_token %}
+
+      <div style="margin-bottom: 20px;">
+        <label for="id_payout_preference" style="display: block; font-size: 0.88rem; font-weight: 700; color: #334155; margin-bottom: 6px;">
+          Disbursement Channel
+        </label>
+        {{ form.payout_preference }}
+        <div style="font-size: 0.78rem; color: #64748B; margin-top: 4px;">
+          Preferred method for receiving automated batch earnings.
+        </div>
+      </div>
+
+      <div style="margin-bottom: 20px;">
+        <label for="id_payout_upi_id" style="display: block; font-size: 0.88rem; font-weight: 700; color: #334155; margin-bottom: 6px;">
+          UPI ID / Virtual Payment Address (VPA) <span style="color: #DC2626;">*</span>
+        </label>
+        {{ form.payout_upi_id }}
+        {% if form.payout_upi_id.errors %}
+          <div style="color: #DC2626; font-size: 0.82rem; margin-top: 4px;">
+            {{ form.payout_upi_id.errors.0 }}
+          </div>
+        {% endif %}
+        <div style="font-size: 0.78rem; color: #64748B; margin-top: 4px;">
+          e.g., yourname@okhdfcbank, mobile@upi, or professional@paytm.
+        </div>
+      </div>
+
+      <div style="margin-bottom: 24px;">
+        <label for="id_payout_upi_name" style="display: block; font-size: 0.88rem; font-weight: 700; color: #334155; margin-bottom: 6px;">
+          Beneficiary Account Legal Name <span style="color: #DC2626;">*</span>
+        </label>
+        {{ form.payout_upi_name }}
+        {% if form.payout_upi_name.errors %}
+          <div style="color: #DC2626; font-size: 0.82rem; margin-top: 4px;">
+            {{ form.payout_upi_name.errors.0 }}
+          </div>
+        {% endif %}
+        <div style="font-size: 0.78rem; color: #64748B; margin-top: 4px;">
+          Must match name registered with your banking institution for settlement matching.
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 12px;">
+        <button type="submit" class="btn btn-primary" style="padding: 10px 24px; font-weight: 700; border-radius: 8px;">
+          Save Payout Settings
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

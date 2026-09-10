@@ -136,3 +136,9 @@ LOGOUT_REDIRECT_URL = 'home'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Stage 8A: Payment Gateway Configuration (Test / Sandbox Mode)
+PAYMENT_GATEWAY_KEY_ID = os.environ.get('PAYMENT_GATEWAY_KEY_ID', 'test_key_servora_sandbox')
+PAYMENT_GATEWAY_KEY_SECRET = os.environ.get('PAYMENT_GATEWAY_KEY_SECRET', 'test_secret_servora_sandbox')
+PAYMENT_GATEWAY_WEBHOOK_SECRET = os.environ.get('PAYMENT_GATEWAY_WEBHOOK_SECRET', 'test_whsec_servora_sandbox')
+

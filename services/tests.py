@@ -1674,7 +1674,7 @@ class RGMVerifiableRevenueTests(TestCase):
 
     # 2. Verified actual commission included
     def test_verified_actual_commission_included(self):
-        """An actual transaction (is_demo=False) with verification_status='verified' must contribute to verified revenue."""
+        """An actual transaction (is_demo=False) with verification_status='verified', has_evidence=True, and UTR must contribute to verified revenue."""
         RevenueTransaction.objects.create(
             revenue_type='commission',
             amount=Decimal('350.00'),
@@ -1684,12 +1684,52 @@ class RGMVerifiableRevenueTests(TestCase):
             status='completed',
             is_demo=False,
             verification_status='verified',
-            has_evidence=True
+            has_evidence=True,
+            transaction_reference='UPI-UTR-987654321012',
+            payment_method='upi'
         )
         self.client.login(username='rgm_admin', password='password123')
         response = self.client.get(reverse('platform_revenue'))
         self.assertEqual(response.context['verified_revenue'], Decimal('350.00'))
         self.assertEqual(response.context['verified_commission_revenue'], Decimal('350.00'))
+
+    # 2b. Actual transaction without evidence excluded
+    def test_actual_transaction_without_evidence_excluded_from_verified_revenue(self):
+        """Transactions marked verified but lacking external audit evidence (has_evidence=False) must be excluded from verified revenue."""
+        RevenueTransaction.objects.create(
+            revenue_type='commission',
+            amount=Decimal('500.00'),
+            provider=self.provider_profile,
+            booking=self.booking_completed,
+            description='Missing Evidence Commission',
+            status='completed',
+            is_demo=False,
+            verification_status='verified',
+            has_evidence=False,
+            transaction_reference='UPI-UTR-987654321012'
+        )
+        self.client.login(username='rgm_admin', password='password123')
+        response = self.client.get(reverse('platform_revenue'))
+        self.assertEqual(response.context['verified_revenue'], Decimal('0.00'))
+
+    # 2c. Actual transaction without reference excluded
+    def test_actual_transaction_without_reference_excluded_from_verified_revenue(self):
+        """Transactions marked verified with evidence but lacking a valid transaction reference/UTR must be excluded."""
+        RevenueTransaction.objects.create(
+            revenue_type='commission',
+            amount=Decimal('500.00'),
+            provider=self.provider_profile,
+            booking=self.booking_completed,
+            description='Missing UTR Commission',
+            status='completed',
+            is_demo=False,
+            verification_status='verified',
+            has_evidence=True,
+            transaction_reference=''
+        )
+        self.client.login(username='rgm_admin', password='password123')
+        response = self.client.get(reverse('platform_revenue'))
+        self.assertEqual(response.context['verified_revenue'], Decimal('0.00'))
 
     # 3. Unverified transaction excluded
     def test_unverified_transaction_excluded(self):
@@ -1818,7 +1858,8 @@ class RGMVerifiableRevenueTests(TestCase):
             status='completed',
             is_demo=False,
             verification_status='verified',
-            has_evidence=True
+            has_evidence=True,
+            transaction_reference='UPI-UTR-250000000000'
         )
         self.client.login(username='rgm_admin', password='password123')
         response = self.client.get(reverse('platform_revenue'))
@@ -1837,7 +1878,8 @@ class RGMVerifiableRevenueTests(TestCase):
             status='completed',
             is_demo=False,
             verification_status='verified',
-            has_evidence=True
+            has_evidence=True,
+            transaction_reference='UPI-UTR-300000000000'
         )
         self.client.login(username='rgm_admin', password='password123')
         response = self.client.get(reverse('platform_revenue'))
@@ -1850,7 +1892,8 @@ class RGMVerifiableRevenueTests(TestCase):
         RevenueTransaction.objects.create(
             revenue_type='commission', amount=Decimal('100.00'),
             provider=self.provider_profile, status='completed',
-            is_demo=False, verification_status='verified'
+            is_demo=False, verification_status='verified',
+            has_evidence=True, transaction_reference='UPI-UTR-100000000000'
         )
         RevenueTransaction.objects.create(
             revenue_type='commission', amount=Decimal('200.00'),

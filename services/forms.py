@@ -209,3 +209,56 @@ class ReviewForm(forms.ModelForm):
         return comment
 
 
+class ProviderPayoutSettingsForm(forms.Form):
+    """
+    Form for service providers to configure their payout disbursement preference.
+    Validates UPI ID syntax and provides clear security warnings against PIN/password disclosure.
+    """
+    payout_upi_id = forms.CharField(
+        max_length=100,
+        required=True,
+        widget=forms.TextInput(attrs={
+            'class': 'form-input',
+            'placeholder': 'e.g. yourname@okhdfcbank or 9876543210@upi',
+            'id': 'id_payout_upi_id',
+        }),
+        help_text="Your Virtual Payment Address (VPA) for receiving 90% service earnings."
+    )
+    payout_upi_name = forms.CharField(
+        max_length=150,
+        required=True,
+        widget=forms.TextInput(attrs={
+            'class': 'form-input',
+            'placeholder': 'Beneficiary Account Name as registered with bank/UPI',
+            'id': 'id_payout_upi_name',
+        }),
+        help_text="Full legal name linked to this UPI account."
+    )
+    payout_preference = forms.ChoiceField(
+        choices=[('upi', 'UPI / VPA Electronic Settlement'), ('bank', 'Direct Bank IMPS / NEFT Transfer')],
+        required=True,
+        widget=forms.Select(attrs={
+            'class': 'form-select',
+            'id': 'id_payout_preference',
+        })
+    )
+
+    def clean_payout_upi_id(self):
+        import re
+        upi_id = self.cleaned_data.get('payout_upi_id', '').strip()
+        if not upi_id:
+            raise forms.ValidationError("UPI ID is required for payout configuration.")
+        # Basic UPI validation: alphanumeric/dots/hyphens/underscores + @ + bank code
+        pattern = r'^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z0-9.\-_]{2,64}$'
+        if not re.match(pattern, upi_id):
+            raise forms.ValidationError("Please enter a valid UPI ID (e.g. username@bank or mobile@upi).")
+        return upi_id
+
+    def clean_payout_upi_name(self):
+        name = self.cleaned_data.get('payout_upi_name', '').strip()
+        if len(name) < 2:
+            raise forms.ValidationError("Please provide the full registered beneficiary name.")
+        return name
+
+
+

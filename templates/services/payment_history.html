@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Payment History – Servora{% endblock %}
+
+{% block content %}
+<section class="section" style="padding: 40px 0 80px; background: #F8FAFC;">
+  <div class="container container-narrow">
+    <!-- Breadcrumb -->
+    <div style="margin-bottom: 24px; font-size: 0.85rem; color: #64748B;">
+      <a href="{% url 'home' %}" style="color: #64748B;">Home</a> /
+      <a href="{% url 'my_bookings' %}" style="color: #64748B;">My Bookings</a> /
+      <span style="color: #0F172A; font-weight: 700;">Payment History</span>
+    </div>
+
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 28px; flex-wrap: wrap; gap: 16px;">
+      <div>
+        <h1 style="font-size: 1.85rem; font-weight: 800; color: #0F172A; margin: 0 0 6px;">Payment History & Invoices</h1>
+        <p style="color: #64748B; margin: 0;">Comprehensive record of your digital transactions and commercial service receipts.</p>
+      </div>
+      <div style="background: #FFFFFF; border: 1px solid #E2E8F0; padding: 12px 20px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.03);">
+        <span style="font-size: 0.78rem; color: #64748B; text-transform: uppercase; font-weight: 700;">Total Settled Spend</span>
+        <div style="font-size: 1.4rem; font-weight: 800; color: #10B981;">₹{{ total_paid|floatformat:2 }}</div>
+      </div>
+    </div>
+
+    {% if payments %}
+      <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.04);">
+        <table style="width: 100%; border-collapse: collapse; text-align: left;">
+          <thead>
+            <tr style="background: #F8FAFC; border-bottom: 1px solid #E2E8F0; font-size: 0.82rem; text-transform: uppercase; color: #64748B; letter-spacing: 0.05em;">
+              <th style="padding: 16px 20px;">Payment Ref</th>
+              <th style="padding: 16px 20px;">Service & Provider</th>
+              <th style="padding: 16px 20px;">Method</th>
+              <th style="padding: 16px 20px;">Amount</th>
+              <th style="padding: 16px 20px;">Status</th>
+              <th style="padding: 16px 20px; text-align: right;">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in payments %}
+              <tr style="border-bottom: 1px solid #F1F5F9; font-size: 0.9rem;">
+                <td style="padding: 16px 20px;">
+                  <div style="font-weight: 700; color: #1E293B;">{{ p.gateway_payment_id|default:p.gateway_order_id }}</div>
+                  <div style="font-size: 0.78rem; color: #94A3B8;">{{ p.created_at|date:"d M Y, h:i A" }}</div>
+                </td>
+                <td style="padding: 16px 20px;">
+                  <strong style="color: #1E293B;">{{ p.booking.service.title }}</strong>
+                  <div style="font-size: 0.8rem; color: #64748B;">By {{ p.provider.user.get_full_name|default:p.provider.user.username }}</div>
+                </td>
+                <td style="padding: 16px 20px;">
+                  <span style="display: inline-block; padding: 4px 10px; background: #F1F5F9; border-radius: 8px; font-weight: 700; font-size: 0.8rem; color: #475569;">
+                    {{ p.get_payment_method_display }}
+                  </span>
+                </td>
+                <td style="padding: 16px 20px;">
+                  <strong style="font-size: 1.05rem; color: #0F172A;">₹{{ p.amount|floatformat:2 }}</strong>
+                </td>
+                <td style="padding: 16px 20px;">
+                  {% if p.status == 'captured' %}
+                    <span style="display: inline-block; padding: 4px 10px; background: #ECFDF5; color: #059669; border-radius: 9999px; font-weight: 800; font-size: 0.75rem;">
+                      ✓ Paid
+                    </span>
+                  {% elif p.status == 'failed' %}
+                    <span style="display: inline-block; padding: 4px 10px; background: #FEF2F2; color: #DC2626; border-radius: 9999px; font-weight: 800; font-size: 0.75rem;">
+                      Failed
+                    </span>
+                  {% elif p.status == 'refunded' %}
+                    <span style="display: inline-block; padding: 4px 10px; background: #F3F4F6; color: #6B7280; border-radius: 9999px; font-weight: 800; font-size: 0.75rem;">
+                      Refunded
+                    </span>
+                  {% else %}
+                    <span style="display: inline-block; padding: 4px 10px; background: #FFFBEB; color: #D97706; border-radius: 9999px; font-weight: 800; font-size: 0.75rem;">
+                      {{ p.get_status_display }}
+                    </span>
+                  {% endif %}
+                </td>
+                <td style="padding: 16px 20px; text-align: right;">
+                  <div style="display: inline-flex; gap: 8px;">
+                    <a href="{% url 'booking_detail' p.booking.id %}" class="btn btn-outline btn-sm" style="padding: 6px 12px; font-size: 0.8rem;">
+                      Booking
+                    </a>
+                    {% if p.status == 'captured' and p.booking.status == 'completed' %}
+                      <a href="{% url 'booking_receipt' p.booking.id %}" class="btn btn-primary btn-sm" target="_blank" style="padding: 6px 12px; font-size: 0.8rem; background: #0D6EFD; border-color: #0D6EFD;">
+                        Receipt
+                      </a>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div style="text-align: center; padding: 60px 20px; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px;">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 12px;"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
+        <h3 style="font-size: 1.15rem; color: #1E293B; margin: 0 0 6px;">No payment records found</h3>
+        <p style="color: #64748B; font-size: 0.9rem; margin: 0 0 20px;">You have not made any payments yet. When you complete checkout for a service, it will be listed here.</p>
+        <a href="{% url 'my_bookings' %}" class="btn btn-primary">View My Bookings</a>
+      </div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

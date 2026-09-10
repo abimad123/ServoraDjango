@@ -3,9 +3,14 @@ from django.urls import reverse
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, HttpResponse
+from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Q, Avg, Count, Sum, F, OuterRef, Exists
-from .models import Category, Service, Booking, Review, FeaturedListing, RevenueTransaction, Notification, create_notification
-from .forms import BookingCreateForm, ServiceForm, ReviewForm
+from .models import (
+    Category, Service, Booking, Review, FeaturedListing, RevenueTransaction, 
+    Notification, create_notification, PaymentTransaction, ProviderSettlement
+)
+from .forms import BookingCreateForm, ServiceForm, ReviewForm, ProviderPayoutSettingsForm
+from .payment_service import PaymentService, TestGatewayAdapter
 from users.models import UserProfile, ProviderSubscription
 from users.forms import ProviderProfileForm
 from users.decorators import provider_required, admin_required
@@ -433,6 +438,11 @@ def cancel_booking_view(request, booking_id):
 
     booking.status = 'cancelled'
     booking.save()
+
+    # If the booking was already paid, handle refund and void settlement
+    if booking.payment_status == 'paid':
+        PaymentService.handle_refund(booking, reason="Customer cancelled pending booking")
+
 
     create_notification(
         recipient=booking.service.provider.user,
@@ -1084,8 +1094,16 @@ def platform_revenue_dashboard_view(request):
     featured_count = completed_tx.filter(revenue_type='featured').count()
     total_transactions_count = completed_tx.count()
 
-    # Stage 7.5: Verifiable Pilot Revenue (is_demo=False, status='completed', verification_status='verified')
-    verified_tx = completed_tx.filter(is_demo=False, verification_status='verified')
+    # Stage 7.5: Verifiable Pilot Revenue (SCRGM Strict Standard)
+    # Transaction must strictly be: is_demo=False, status='completed', verification_status='verified',
+    # has_evidence=True, and possess a valid non-empty transaction reference / UTR
+    verified_tx = completed_tx.filter(
+        is_demo=False,
+        verification_status='verified',
+        has_evidence=True
+    ).exclude(
+        Q(transaction_reference__isnull=True) | Q(transaction_reference__exact='')
+    )
     verified_revenue = verified_tx.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
     verified_commission_revenue = verified_tx.filter(revenue_type='commission').aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
     verified_subscription_revenue = verified_tx.filter(revenue_type='subscription').aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
@@ -1288,7 +1306,14 @@ def platform_revenue_evidence_view(request):
         return response
 
     total_amount = queryset.filter(status='completed').aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-    verified_sum = queryset.filter(status='completed', is_demo=False, verification_status='verified').aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+    verified_sum = queryset.filter(
+        status='completed',
+        is_demo=False,
+        verification_status='verified',
+        has_evidence=True
+    ).exclude(
+        Q(transaction_reference__isnull=True) | Q(transaction_reference__exact='')
+    ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
 
     return render(request, 'platform/evidence.html', {
         'transactions': queryset,
@@ -1328,6 +1353,7 @@ def commercial_receipt_view(request, booking_id):
 
     provider_earning = booking.total_amount - booking.commission_amount
     review = getattr(booking, 'review', None)
+    payment_txn = booking.payment_transactions.filter(status='captured').first()
 
     return render(request, 'services/receipt.html', {
         'booking': booking,
@@ -1336,6 +1362,7 @@ def commercial_receipt_view(request, booking_id):
         'provider': booking.service.provider,
         'provider_earning': provider_earning,
         'review': review,
+        'payment_txn': payment_txn,
     })
 
 
@@ -1482,3 +1509,289 @@ def custom_500_view(request):
     Branded 500 server error page matching the Servora luxury design system.
     """
     return render(request, '500.html', status=500)
+
+
+# ============================================================
+# STAGE 8A: PAYMENT SYSTEM, CHECKOUT & PROVIDER SETTLEMENTS
+# ============================================================
+
+@login_required
+def checkout_view(request, booking_id):
+    """
+    Customer checkout screen for a booking.
+    Validates customer ownership and displays transparent price breakdown:
+    Total to Pay = Service Price (no extra fees added on top).
+    Platform commission (10%) and Provider Net Earning (90%) are displayed transparently.
+    """
+    booking = get_object_or_404(
+        Booking.objects.select_related('service', 'service__provider', 'service__provider__user', 'customer'),
+        id=booking_id
+    )
+
+    # Security: Only booking customer can checkout
+    if booking.customer != request.user:
+        messages.error(request, "You are not authorized to checkout for this booking.")
+        return redirect('my_bookings')
+
+    # Security: Service providers cannot place/checkout customer bookings
+    if hasattr(request.user, 'profile') and request.user.profile.is_provider:
+        messages.error(request, "Service provider accounts cannot perform customer checkouts.")
+        return redirect('service_detail', id=booking.service.id)
+
+    # If already paid, notify and redirect to booking detail
+    if booking.payment_status == 'paid':
+        messages.info(request, f"Booking #SVR{booking.id:05d} has already been paid.")
+        return redirect('booking_detail', booking_id=booking.id)
+
+    split = PaymentService.calculate_split(booking.total_amount)
+    active_txn = PaymentService.create_payment_order(booking, payment_method='upi')
+
+    # Pre-generate valid test gateway signature for test-mode checkout simulation
+    test_payment_id = f"pay_test_{booking.id}_{int(timezone.now().timestamp())}"
+    test_signature = TestGatewayAdapter.generate_signature(active_txn.gateway_order_id, test_payment_id)
+
+    return render(request, 'services/checkout.html', {
+        'booking': booking,
+        'service': booking.service,
+        'split': split,
+        'active_txn': active_txn,
+        'test_payment_id': test_payment_id,
+        'test_signature': test_signature,
+        'gateway_key_id': TestGatewayAdapter.get_key_id(),
+    })
+
+
+@login_required
+def payment_create_view(request, booking_id):
+    """
+    POST endpoint to initialize or re-generate a payment gateway order.
+    Server strictly determines the transaction amount from booking.total_amount.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST method required.'}, status=405)
+
+    booking = get_object_or_404(Booking, id=booking_id, customer=request.user)
+
+    if booking.payment_status == 'paid':
+        return JsonResponse({'error': 'Booking has already been paid.'}, status=400)
+
+    payment_method = request.POST.get('payment_method', 'upi')
+    txn = PaymentService.create_payment_order(booking, payment_method=payment_method)
+    
+    test_payment_id = f"pay_test_{booking.id}_{int(timezone.now().timestamp())}"
+    test_signature = TestGatewayAdapter.generate_signature(txn.gateway_order_id, test_payment_id)
+
+    return JsonResponse({
+        'success': True,
+        'order_id': txn.gateway_order_id,
+        'amount': str(txn.amount),
+        'currency': txn.currency,
+        'payment_method': txn.payment_method,
+        'test_payment_id': test_payment_id,
+        'test_signature': test_signature,
+    })
+
+
+@login_required
+def payment_success_view(request, booking_id):
+    """
+    POST endpoint handling gateway payment verification and capture.
+    Validates HMAC signature, marks booking as paid, and instantiates provider settlement.
+    """
+    if request.method != 'POST':
+        messages.error(request, "Invalid request method.")
+        return redirect('checkout', booking_id=booking_id)
+
+    booking = get_object_or_404(Booking, id=booking_id, customer=request.user)
+
+    gateway_order_id = request.POST.get('gateway_order_id')
+    gateway_payment_id = request.POST.get('gateway_payment_id')
+    gateway_signature = request.POST.get('gateway_signature')
+    payment_method = request.POST.get('payment_method', 'upi')
+
+    if not (gateway_order_id and gateway_payment_id and gateway_signature):
+        messages.error(request, "Incomplete payment verification parameters.")
+        return redirect('checkout', booking_id=booking.id)
+
+    try:
+        PaymentService.verify_and_capture_payment(
+            booking=booking,
+            gateway_order_id=gateway_order_id,
+            gateway_payment_id=gateway_payment_id,
+            gateway_signature=gateway_signature,
+            payment_method=payment_method
+        )
+
+        create_notification(
+            recipient=booking.service.provider.user,
+            notification_type='booking_accepted',
+            title='Payment Received',
+            message=f"Customer {booking.customer.get_full_name() or booking.customer.username} paid ₹{booking.total_amount:.2f} for Booking #SVR{booking.id:05d}.",
+            booking=booking,
+            service=booking.service
+        )
+
+        messages.success(
+            request, 
+            f"Payment of ₹{booking.total_amount:.2f} confirmed successfully! Reference: {gateway_payment_id}."
+        )
+        return redirect('booking_detail', booking_id=booking.id)
+    except ValueError as e:
+        messages.error(request, f"Payment verification failed: {str(e)}")
+        return redirect('checkout', booking_id=booking.id)
+
+
+@login_required
+def payment_failed_view(request, booking_id):
+    """
+    Handles payment failure or user checkout abandonment.
+    Updates transaction status to 'failed' without creating revenue or settlement.
+    """
+    booking = get_object_or_404(Booking, id=booking_id, customer=request.user)
+    reason = request.POST.get('failure_reason', 'Transaction was cancelled or declined.')
+    order_id = request.POST.get('gateway_order_id')
+
+    PaymentService.handle_payment_failure(booking, failure_reason=reason, gateway_order_id=order_id)
+
+    messages.warning(request, f"Payment was not completed: {reason}. You can retry anytime.")
+    return redirect('checkout', booking_id=booking.id)
+
+
+@csrf_exempt
+def payment_webhook_view(request):
+    """
+    Payment gateway webhook receiver.
+    Verifies webhook HMAC signature and delegates idempotent processing.
+    """
+    if request.method != 'POST':
+        return HttpResponse("Method not allowed", status=405)
+
+    signature = (
+        request.headers.get('X-Razorpay-Signature') 
+        or request.headers.get('X-Payment-Signature') 
+        or request.META.get('HTTP_X_PAYMENT_SIGNATURE', '')
+    )
+
+    result = PaymentService.process_webhook_event(request.body, signature)
+    return JsonResponse(result, status=result.get('status', 200))
+
+
+@login_required
+def customer_payment_history_view(request):
+    """
+    Customer portal view displaying full payment history, methods, and receipt links.
+    """
+    if hasattr(request.user, 'profile') and request.user.profile.is_provider:
+        messages.info(request, "Providers can track settlements under Provider Financials.")
+        return redirect('provider_settlements')
+
+    payments = PaymentTransaction.objects.filter(customer=request.user).select_related(
+        'booking', 'booking__service', 'provider', 'provider__user'
+    ).order_by('-created_at')
+
+    total_paid = payments.filter(status='captured').aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+
+    return render(request, 'services/payment_history.html', {
+        'payments': payments,
+        'total_paid': total_paid,
+        'total_count': payments.count(),
+    })
+
+
+@provider_required
+def provider_payout_settings_view(request):
+    """
+    Allows service providers to configure their payout disbursement preferences (UPI ID / Bank details).
+    Enforces strict security notice against disclosing sensitive credentials.
+    """
+    profile = request.user.profile
+
+    if request.method == 'POST':
+        form = ProviderPayoutSettingsForm(request.POST)
+        if form.is_valid():
+            profile.payout_upi_id = form.cleaned_data['payout_upi_id']
+            profile.payout_upi_name = form.cleaned_data['payout_upi_name']
+            profile.payout_preference = form.cleaned_data['payout_preference']
+            profile.payout_status = 'ready'
+            profile.save()
+            messages.success(request, "Payout disbursement settings updated successfully!")
+            return redirect('provider_payout_settings')
+    else:
+        form = ProviderPayoutSettingsForm(initial={
+            'payout_upi_id': profile.payout_upi_id,
+            'payout_upi_name': profile.payout_upi_name,
+            'payout_preference': profile.payout_preference,
+        })
+
+    return render(request, 'provider/payout_settings.html', {
+        'form': form,
+        'profile': profile,
+        'active_tab': 'payout_settings',
+    })
+
+
+@provider_required
+def provider_settlements_view(request):
+    """
+    Provider settlement ledger displaying pending and paid disbursements
+    for completed customer bookings.
+    """
+    profile = request.user.profile
+    settlements = ProviderSettlement.objects.filter(provider=profile).select_related(
+        'booking', 'booking__service', 'booking__customer', 'payment_transaction'
+    ).order_by('-created_at')
+
+    pending_total = settlements.filter(status='pending').aggregate(total=Sum('payout_amount'))['total'] or Decimal('0.00')
+    paid_total = settlements.filter(status='paid').aggregate(total=Sum('payout_amount'))['total'] or Decimal('0.00')
+    gross_total = settlements.filter(status__in=['pending', 'paid']).aggregate(total=Sum('gross_amount'))['total'] or Decimal('0.00')
+    commission_total = settlements.filter(status__in=['pending', 'paid']).aggregate(total=Sum('commission_amount'))['total'] or Decimal('0.00')
+
+    return render(request, 'provider/settlements.html', {
+        'settlements': settlements,
+        'pending_total': pending_total,
+        'paid_total': paid_total,
+        'gross_total': gross_total,
+        'commission_total': commission_total,
+        'active_tab': 'settlements',
+    })
+
+
+@admin_required
+def platform_payments_dashboard_view(request):
+    """
+    Staff-only platform payment administration dashboard.
+    Visualizes Gross Booking Value, platform commissions, provider settlements, and gateway ledger.
+    """
+    all_payments = PaymentTransaction.objects.select_related('booking', 'customer', 'provider__user').all()
+    all_settlements = ProviderSettlement.objects.select_related('booking', 'provider__user').all()
+
+    total_payments_count = all_payments.count()
+    successful_payments = all_payments.filter(status='captured')
+    successful_count = successful_payments.count()
+    failed_count = all_payments.filter(status='failed').count()
+    pending_count = all_payments.filter(status__in=['created', 'pending']).count()
+    refunded_count = all_payments.filter(status='refunded').count()
+
+    gross_booking_value = successful_payments.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+    platform_commission = (gross_booking_value * Decimal('0.10')).quantize(Decimal('0.01'))
+    provider_payout_total = gross_booking_value - platform_commission
+
+    pending_settlements_amount = all_settlements.filter(status='pending').aggregate(total=Sum('payout_amount'))['total'] or Decimal('0.00')
+    completed_settlements_amount = all_settlements.filter(status='paid').aggregate(total=Sum('payout_amount'))['total'] or Decimal('0.00')
+
+    return render(request, 'platform/payments_dashboard.html', {
+        'payments': all_payments[:25],
+        'settlements': all_settlements[:25],
+        'total_payments_count': total_payments_count,
+        'successful_count': successful_count,
+        'failed_count': failed_count,
+        'pending_count': pending_count,
+        'refunded_count': refunded_count,
+        'gross_booking_value': gross_booking_value,
+        'platform_commission': platform_commission,
+        'provider_payout_total': provider_payout_total,
+        'pending_settlements_amount': pending_settlements_amount,
+        'completed_settlements_amount': completed_settlements_amount,
+        'active_tab': 'payments',
+    })
+

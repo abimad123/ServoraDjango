@@ -96,12 +96,25 @@ class Booking(models.Model):
         ('declined', 'Declined'),
         ('cancelled', 'Cancelled'),
     )
+    PAYMENT_STATUS_CHOICES = (
+        ('unpaid', 'Unpaid'),
+        ('pending', 'Payment Pending'),
+        ('paid', 'Paid'),
+        ('failed', 'Payment Failed'),
+        ('refunded', 'Refunded'),
+    )
 
     service = models.ForeignKey(Service, on_delete=models.CASCADE, related_name='bookings')
     customer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='bookings')
     booking_date = models.DateField()
     booking_time = models.TimeField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    payment_status = models.CharField(
+        max_length=20, 
+        choices=PAYMENT_STATUS_CHOICES, 
+        default='unpaid',
+        help_text="Financial settlement status of the customer booking."
+    )
     total_amount = models.DecimalField(max_digits=10, decimal_places=2)
     commission_rate = models.DecimalField(
         max_digits=5, 
@@ -267,10 +280,112 @@ class RevenueTransaction(models.Model):
             )
         ]
 
+    @property
+    def is_rgm_verified(self):
+        """
+        Returns True only if the transaction satisfies all SCRGM verifiable revenue standards:
+        1. Not synthetic/seeded demonstration data (is_demo == False)
+        2. Transaction settled (status == 'completed')
+        3. Formally audited by staff (verification_status == 'verified')
+        4. External banking/receipt audit proof confirmed (has_evidence == True)
+        5. Valid non-empty transaction reference / UTR recorded
+        """
+        return (
+            not self.is_demo
+            and self.status == 'completed'
+            and self.verification_status == 'verified'
+            and self.has_evidence
+            and bool(self.transaction_reference and self.transaction_reference.strip())
+        )
+
     def __str__(self):
         demo_tag = " [DEMO]" if self.is_demo else ""
         verif_tag = f" ({self.get_verification_status_display()})" if not self.is_demo else ""
         return f"[{self.get_revenue_type_display()}]{demo_tag} ₹{self.amount} - {self.provider.user.username}{verif_tag}"
+
+
+class PaymentTransaction(models.Model):
+    """
+    Represents customer payment gateway transactions for bookings.
+    Maintains payment lifecycle independent of platform revenue or provider payouts.
+    """
+    STATUS_CHOICES = (
+        ('created', 'Created'),
+        ('pending', 'Pending'),
+        ('authorized', 'Authorized'),
+        ('captured', 'Captured / Paid'),
+        ('failed', 'Failed'),
+        ('cancelled', 'Cancelled'),
+        ('refunded', 'Refunded'),
+        ('partially_refunded', 'Partially Refunded'),
+    )
+    PAYMENT_METHOD_CHOICES = (
+        ('upi', 'UPI / QR Transfer'),
+        ('card', 'Debit / Credit Card'),
+        ('netbanking', 'Net Banking'),
+        ('wallet', 'Digital Wallet'),
+        ('other', 'Other'),
+    )
+
+    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='payment_transactions')
+    customer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='customer_payments')
+    provider = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name='provider_payments')
+    gateway = models.CharField(max_length=50, default='test_gateway')
+    gateway_order_id = models.CharField(max_length=100, blank=True, db_index=True)
+    gateway_payment_id = models.CharField(max_length=100, blank=True, db_index=True)
+    gateway_signature = models.CharField(max_length=255, blank=True)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    currency = models.CharField(max_length=10, default='INR')
+    payment_method = models.CharField(max_length=30, choices=PAYMENT_METHOD_CHOICES, default='upi')
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='created')
+    failure_reason = models.TextField(blank=True, default='')
+    paid_at = models.DateTimeField(null=True, blank=True)
+    is_demo = models.BooleanField(default=False, help_text="True if synthetic test-mode transaction.")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Payment #{self.id} (₹{self.amount}) - {self.get_status_display()} [{self.gateway_payment_id or self.gateway_order_id or 'Pending'}]"
+
+
+class ProviderSettlement(models.Model):
+    """
+    Represents settlement and disbursement of provider earnings (90% of Gross Booking Value)
+    after deducting the 10% Servora platform commission.
+    """
+    STATUS_CHOICES = (
+        ('pending', 'Pending Settlement'),
+        ('processing', 'Processing Disbursement'),
+        ('paid', 'Settled / Paid'),
+        ('failed', 'Settlement Failed'),
+        ('refunded', 'Refunded / Cancelled'),
+    )
+
+    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='settlements')
+    provider = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name='settlements')
+    payment_transaction = models.ForeignKey(
+        PaymentTransaction, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='settlements'
+    )
+    gross_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    commission_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    payout_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='pending')
+    payout_reference = models.CharField(max_length=100, blank=True, default='')
+    settlement_date = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Settlement #{self.id} for Booking #{self.booking.id} - ₹{self.payout_amount} to {self.provider.user.username} ({self.get_status_display()})"
 
 
 

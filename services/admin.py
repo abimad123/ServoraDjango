@@ -1,5 +1,8 @@
 from django.contrib import admin
-from .models import Category, Service, Booking, Review, FeaturedListing, RevenueTransaction, Notification
+from .models import (
+    Category, Service, Booking, Review, FeaturedListing, RevenueTransaction, 
+    Notification, PaymentTransaction, ProviderSettlement
+)
 
 
 @admin.register(Category)
@@ -20,11 +23,11 @@ class ServiceAdmin(admin.ModelAdmin):
 
 @admin.register(Booking)
 class BookingAdmin(admin.ModelAdmin):
-    list_display = ('id', 'service', 'customer', 'booking_date', 'booking_time', 'total_amount', 'commission_amount', 'status', 'created_at')
-    list_filter = ('status', 'booking_date', 'service__category')
+    list_display = ('id', 'service', 'customer', 'booking_date', 'booking_time', 'total_amount', 'commission_amount', 'status', 'payment_status', 'created_at')
+    list_filter = ('status', 'payment_status', 'booking_date', 'service__category')
     search_fields = ('service__title', 'customer__username', 'customer__first_name', 'customer__last_name')
     date_hierarchy = 'booking_date'
-    list_editable = ('status',)
+    list_editable = ('status', 'payment_status')
 
 
 @admin.register(Review)
@@ -85,4 +88,34 @@ class NotificationAdmin(admin.ModelAdmin):
     list_display = ('recipient', 'notification_type', 'title', 'is_read', 'created_at')
     list_filter = ('notification_type', 'is_read', 'created_at')
     search_fields = ('recipient__username', 'title', 'message')
+
+
+@admin.register(PaymentTransaction)
+class PaymentTransactionAdmin(admin.ModelAdmin):
+    list_display = (
+        'id', 'booking', 'customer', 'provider', 'amount', 'currency',
+        'payment_method', 'status', 'gateway_payment_id', 'gateway_order_id',
+        'is_demo', 'paid_at', 'created_at'
+    )
+    list_filter = ('status', 'payment_method', 'gateway', 'is_demo', 'created_at')
+    search_fields = (
+        'gateway_order_id', 'gateway_payment_id', 'customer__username',
+        'provider__user__username', 'booking__id'
+    )
+    readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(ProviderSettlement)
+class ProviderSettlementAdmin(admin.ModelAdmin):
+    list_display = (
+        'id', 'booking', 'provider', 'gross_amount', 'commission_amount',
+        'payout_amount', 'status', 'payout_reference', 'settlement_date', 'created_at'
+    )
+    list_filter = ('status', 'settlement_date', 'created_at')
+    search_fields = (
+        'payout_reference', 'provider__user__username',
+        'booking__id', 'payment_transaction__gateway_payment_id'
+    )
+    list_editable = ('status', 'payout_reference')
+
 
