@@ -118,6 +118,25 @@
           <h2>What Clients Say About {{ provider.user.first_name }}</h2>
         </div>
 
+        {% if rating_distribution %}
+          <div style="background: #FFFFFF; border: 1px solid var(--border-subtle); border-radius: 18px; padding: 20px 24px; margin-bottom: 28px; max-width: 480px;">
+            <div style="display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px;">
+              <span style="font-size: 2rem; font-weight: 800; color: var(--brand-dark);">{{ average_rating }}</span>
+              <span style="color: #F59E0B; font-size: 1.3rem;">★</span>
+              <span style="color: var(--text-muted); font-size: 0.9rem;">Based on {{ total_reviews }} reviews</span>
+            </div>
+            {% for dist in rating_distribution %}
+              <div style="display: flex; align-items: center; gap: 10px; font-size: 0.82rem; margin-bottom: 5px;">
+                <span style="width: 28px; font-weight: 700; color: #475569;">{{ dist.star }} ★</span>
+                <div style="flex: 1; height: 8px; background: #F1F5F9; border-radius: 9999px; overflow: hidden;">
+                  <div style="width: {{ dist.percent }}%; height: 100%; background: #F59E0B; border-radius: 9999px;"></div>
+                </div>
+                <span style="width: 32px; text-align: right; color: #64748B; font-weight: 600;">{{ dist.count }}</span>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+
         <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px;">
           {% for review in reviews %}
             <div class="card" style="padding: 22px;">

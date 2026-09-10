@@ -15,6 +15,11 @@ urlpatterns = [
     path('my-bookings/', views.my_bookings_view, name='my_bookings'),
     path('my-bookings/<int:booking_id>/', views.booking_detail_view, name='booking_detail'),
     path('my-bookings/<int:booking_id>/cancel/', views.cancel_booking_view, name='cancel_booking'),
+    path('my-bookings/<int:booking_id>/review/', views.leave_review_view, name='leave_review'),
+    path('my-bookings/<int:booking_id>/receipt/', views.commercial_receipt_view, name='booking_receipt'),
+    path('notifications/', views.notifications_list_view, name='notifications_list'),
+    path('notifications/<int:id>/read/', views.notification_mark_read_view, name='notification_mark_read'),
+    path('notifications/read-all/', views.notification_mark_all_read_view, name='notification_mark_all_read'),
     path('provider/bookings/', views.provider_bookings_view, name='provider_bookings'),
     path('api/availability/', views.api_availability_view, name='api_availability'),
 
@@ -38,6 +43,7 @@ urlpatterns = [
     # Platform revenue & executive monetization routes
     path('platform/revenue/', views.platform_revenue_dashboard_view, name='platform_revenue'),
     path('platform/revenue/transactions/', views.platform_revenue_transactions_view, name='platform_revenue_transactions'),
+    path('platform/revenue/evidence/', views.platform_revenue_evidence_view, name='platform_revenue_evidence'),
 
     # Academic requirements: JSON API and re_path
     path('api/services/', views.api_services_list, name='api_services_list'),

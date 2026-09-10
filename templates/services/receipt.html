@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+
+{% block title %}Commercial Service Receipt #SVR{{ booking.id|stringformat:"05d" }} – Servora{% endblock %}
+
+{% block content %}
+<div style="max-width: 780px; margin: 2rem auto 4rem; padding: 0 1.5rem;">
+  <!-- Print Controls -->
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+    <a href="{% url 'booking_detail' booking.id %}" class="btn btn-outline btn-sm">
+      &larr; Back to Booking #{{ booking.id }}
+    </a>
+    <button onclick="window.print()" class="btn btn-primary btn-sm" style="background: #0F172A; border-color: #0F172A;">
+      🖨️ Print Commercial Receipt
+    </button>
+  </div>
+
+  <!-- Receipt Box -->
+  <div style="background: #FFFFFF; border: 2px solid #E2E8F0; border-radius: 16px; padding: 2.5rem; box-shadow: 0 8px 24px rgba(0,0,0,0.04);">
+    <!-- Receipt Header -->
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0F172A; padding-bottom: 1.5rem; margin-bottom: 1.5rem;">
+      <div>
+        <div style="font-size: 1.6rem; font-weight: 900; color: #FF5A36; letter-spacing: -0.02em;">
+          SERVORA
+        </div>
+        <div style="font-size: 0.85rem; font-weight: 700; color: #0F172A; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.25rem;">
+          SERVORA COMMERCIAL SERVICE RECEIPT
+        </div>
+        <div style="font-size: 0.78rem; color: #64748B; margin-top: 0.2rem;">
+          Local Home Services Marketplace Platform
+        </div>
+      </div>
+
+      <div style="text-align: right;">
+        <div style="font-size: 1.1rem; font-weight: 800; color: #0F172A;">
+          Receipt #SVR{{ booking.id|stringformat:"05d" }}
+        </div>
+        <div style="font-size: 0.82rem; color: #64748B; margin-top: 0.25rem;">
+          Date: {{ booking.booking_date|date:"d F Y" }}
+        </div>
+        <span style="display: inline-block; margin-top: 0.35rem; background: #DEF7EC; color: #03543F; font-size: 0.75rem; font-weight: 800; padding: 2px 10px; border-radius: 9999px;">
+          ✓ Service Completed & Settled
+        </span>
+      </div>
+    </div>
+
+    <!-- Parties Involved Grid -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem; font-size: 0.88rem;">
+      <div>
+        <div style="font-size: 0.75rem; font-weight: 800; color: #64748B; text-transform: uppercase; margin-bottom: 0.35rem;">
+          Billed To (Customer)
+        </div>
+        <div style="font-weight: 700; color: #0F172A; font-size: 1rem;">
+          {{ customer.get_full_name|default:customer.username }}
+        </div>
+        <div style="color: #475569; margin-top: 0.2rem;">{{ customer.email }}</div>
+        <div style="color: #475569; margin-top: 0.2rem;">Service Location: {{ booking.address }}</div>
+      </div>
+
+      <div>
+        <div style="font-size: 0.75rem; font-weight: 800; color: #64748B; text-transform: uppercase; margin-bottom: 0.35rem;">
+          Service Provider (Independent Contractor)
+        </div>
+        <div style="font-weight: 700; color: #0F172A; font-size: 1rem;">
+          {{ provider.user.get_full_name|default:provider.user.username }}
+        </div>
+        <div style="color: #475569; margin-top: 0.2rem;">{{ provider.user.email }}</div>
+        <div style="color: #475569; margin-top: 0.2rem;">City: {{ provider.city }} • Verified: {% if provider.is_verified %}Yes{% else %}Pending{% endif %}</div>
+      </div>
+    </div>
+
+    <!-- Line Item Table -->
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 1.5rem; font-size: 0.88rem;">
+      <thead>
+        <tr style="background: #F8FAFC; border-top: 1px solid #E2E8F0; border-bottom: 1px solid #E2E8F0; text-align: left;">
+          <th style="padding: 10px 12px; font-weight: 700; color: #334155;">Service Description</th>
+          <th style="padding: 10px 12px; font-weight: 700; color: #334155; text-align: center;">Scheduled Slot</th>
+          <th style="padding: 10px 12px; font-weight: 700; color: #334155; text-align: right;">Amount (INR)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom: 1px solid #E2E8F0;">
+          <td style="padding: 14px 12px;">
+            <div style="font-weight: 700; color: #0F172A;">{{ service.title }}</div>
+            <div style="font-size: 0.78rem; color: #64748B; margin-top: 0.25rem;">
+              Category: {{ service.category.name }} • Duration: {{ service.duration_estimate }}
+            </div>
+            {% if booking.notes %}
+              <div style="font-size: 0.78rem; color: #475569; margin-top: 0.35rem; font-style: italic;">
+                Customer Notes: "{{ booking.notes }}"
+              </div>
+            {% endif %}
+          </td>
+          <td style="padding: 14px 12px; text-align: center; color: #334155;">
+            {{ booking.booking_date|date:"d M Y" }}<br>
+            <span style="font-size: 0.8rem; color: #64748B;">{{ booking.booking_time|time:"g:i A" }}</span>
+          </td>
+          <td style="padding: 14px 12px; text-align: right; font-weight: 800; color: #0F172A; font-size: 1.05rem;">
+            ₹{{ booking.total_amount|floatformat:2 }}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Financial Breakdown & Marketplace Split -->
+    <div style="display: flex; justify-content: flex-end; margin-bottom: 2rem;">
+      <div style="width: 320px; font-size: 0.88rem;">
+        <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #F1F5F9; color: #475569;">
+          <span>Gross Service Fee Paid:</span>
+          <span style="font-weight: 700; color: #0F172A;">₹{{ booking.total_amount|floatformat:2 }}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #F1F5F9; color: #64748B; font-size: 0.8rem;">
+          <span>Servora Platform Commission (10%):</span>
+          <span>₹{{ booking.commission_amount|floatformat:2 }}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #F1F5F9; color: #64748B; font-size: 0.8rem;">
+          <span>Provider Net Disbursed (90%):</span>
+          <span>₹{{ provider_earning|floatformat:2 }}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; padding: 10px 0; border-top: 2px solid #0F172A; font-size: 1.1rem; font-weight: 900; color: #0F172A; margin-top: 4px;">
+          <span>Total Paid:</span>
+          <span style="color: #10B981;">₹{{ booking.total_amount|floatformat:2 }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Review Status if Reviewed -->
+    {% if review %}
+      <div style="background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 8px; padding: 1rem; margin-bottom: 2rem; font-size: 0.85rem;">
+        <div style="font-weight: 700; color: #92400E; margin-bottom: 0.25rem;">
+          ★ Customer Feedback: {{ review.rating }}/5 Stars
+        </div>
+        <div style="color: #78350F; font-style: italic;">
+          "{{ review.comment }}"
+        </div>
+      </div>
+    {% endif %}
+
+    <!-- Strict Statutory & Tax Disclaimer (No Fake GST Claims) -->
+    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 1rem; font-size: 0.76rem; color: #64748B; line-height: 1.5;">
+      <strong>STATUTORY NOTICE & COMMERCIAL RECEIPT DISCLAIMER:</strong><br>
+      This document is a formal commercial receipt confirming payment settlement for independent home services facilitated by the Servora marketplace technology platform. This receipt is strictly a <strong>Commercial Service Receipt</strong> and does NOT represent government taxation. Servora and its registered student/independent service providers do not assert GST registration, do not levy Goods & Services Tax, and make no claim of government tax compliance under this transaction. This receipt is issued solely for internal accounting, transaction evidence, and student project auditing.
+    </div>
+  </div>
+</div>
+{% endblock %}

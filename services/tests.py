@@ -2,7 +2,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth.models import User
 from users.models import UserProfile, ProviderSubscription
-from services.models import Category, Service, Booking, Review, FeaturedListing, RevenueTransaction
+from services.models import Category, Service, Booking, Review, FeaturedListing, RevenueTransaction, Notification
 from datetime import date, time, timedelta
 from decimal import Decimal
 
@@ -1103,6 +1103,828 @@ class PlatformRevenueTests(TestCase):
             is_active=True
         )
         self.assertFalse(self.service1.has_active_featured_listing)
+
+
+class ReviewAndNotificationTests(TestCase):
+    """
+    Stage 7 — Customer Reviews and Database Notifications Automated Test Suite.
+    Verifies:
+    1. Review eligibility: completed bookings only, customer ownership enforcement, provider restrictions
+    2. Review validation: rating 1-5 required, comment min length, one review per booking
+    3. Rating calculations: dynamic provider average_rating ORM aggregation
+    4. Service detail and provider profile review displays and distribution
+    5. Database notification triggers across complete booking lifecycle:
+       - booking_created
+       - booking_accepted
+       - booking_declined
+       - booking_cancelled
+       - booking_completed
+       - review_received
+    6. Notification security: user isolation, mark as read, mark all as read
+    """
+
+    def setUp(self):
+        self.client = Client()
+
+        # 1. Provider
+        self.provider1_user = User.objects.create_user(
+            username='prov_ramesh',
+            password='password123',
+            first_name='Ramesh',
+            last_name='Kumar'
+        )
+        self.pro1 = self.provider1_user.profile
+        self.pro1.role = 'provider'
+        self.pro1.city = 'Kannur'
+        self.pro1.save()
+
+        # 2. Customer 1 (Owner of test bookings)
+        self.cust1_user = User.objects.create_user(
+            username='cust_priya',
+            password='password123',
+            first_name='Priya',
+            last_name='Nair'
+        )
+        self.cust1 = self.cust1_user.profile
+        self.cust1.role = 'customer'
+        self.cust1.save()
+
+        # 3. Customer 2 (Separate user for security isolation tests)
+        self.cust2_user = User.objects.create_user(
+            username='cust_amit',
+            password='password123',
+            first_name='Amit',
+            last_name='Patel'
+        )
+        self.cust2 = self.cust2_user.profile
+        self.cust2.role = 'customer'
+        self.cust2.save()
+
+        # 4. Service Category & Service
+        self.category = Category.objects.create(name='Plumbing', icon_name='wrench')
+        self.service = Service.objects.create(
+            provider=self.pro1,
+            category=self.category,
+            title='Tap Repair & Leakage Fixing',
+            description='Professional tap repair and cartridge replacement.',
+            price=Decimal('500.00'),
+            duration_estimate='1 hour',
+            location='Kannur'
+        )
+
+        # 5. Completed Booking for Customer 1
+        self.booking_completed = Booking.objects.create(
+            service=self.service,
+            customer=self.cust1_user,
+            booking_date=date.today() - timedelta(days=2),
+            booking_time=time(10, 0),
+            total_amount=Decimal('500.00'),
+            commission_rate=Decimal('10.00'),
+            status='completed',
+            address='House 12, Seaside, Kannur'
+        )
+
+        # 6. Pending Booking for Customer 1
+        self.booking_pending = Booking.objects.create(
+            service=self.service,
+            customer=self.cust1_user,
+            booking_date=date.today() + timedelta(days=1),
+            booking_time=time(11, 0),
+            total_amount=Decimal('500.00'),
+            commission_rate=Decimal('10.00'),
+            status='pending',
+            address='House 12, Seaside, Kannur'
+        )
+
+        # 7. Accepted Booking for Customer 1
+        self.booking_accepted = Booking.objects.create(
+            service=self.service,
+            customer=self.cust1_user,
+            booking_date=date.today() + timedelta(days=2),
+            booking_time=time(14, 0),
+            total_amount=Decimal('500.00'),
+            commission_rate=Decimal('10.00'),
+            status='accepted',
+            address='House 12, Seaside, Kannur'
+        )
+
+        # 8. Cancelled Booking for Customer 1
+        self.booking_cancelled = Booking.objects.create(
+            service=self.service,
+            customer=self.cust1_user,
+            booking_date=date.today() - timedelta(days=5),
+            booking_time=time(16, 0),
+            total_amount=Decimal('500.00'),
+            commission_rate=Decimal('10.00'),
+            status='cancelled',
+            address='House 12, Seaside, Kannur'
+        )
+
+    # -------------------------------------------------------------------------
+    # A. REVIEW ELIGIBILITY & VALIDATION TESTS
+    # -------------------------------------------------------------------------
+    def test_customer_can_review_completed_booking(self):
+        """Customer who completed a booking can submit a 1-5 star review with comment."""
+        self.client.login(username='cust_priya', password='password123')
+        resp_get = self.client.get(reverse('leave_review', kwargs={'booking_id': self.booking_completed.id}))
+        self.assertEqual(resp_get.status_code, 200)
+        self.assertTemplateUsed(resp_get, 'services/leave_review.html')
+
+        resp_post = self.client.post(reverse('leave_review', kwargs={'booking_id': self.booking_completed.id}), {
+            'rating': 5,
+            'comment': 'Exceptional service provided on time! Very polite and skilled.',
+        })
+        self.assertEqual(resp_post.status_code, 302)
+
+        # Verify review stored in database
+        review = Review.objects.filter(booking=self.booking_completed).first()
+        self.assertIsNotNone(review)
+        self.assertEqual(review.rating, 5)
+        self.assertEqual(review.customer, self.cust1_user)
+        self.assertEqual(review.service, self.service)
+
+    def test_customer_cannot_review_pending_booking(self):
+        """Customer cannot review a booking that is still in pending status."""
+        self.client.login(username='cust_priya', password='password123')
+        response = self.client.post(reverse('leave_review', kwargs={'booking_id': self.booking_pending.id}), {
+            'rating': 5,
+            'comment': 'Attempting early review.',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Review.objects.filter(booking=self.booking_pending).exists())
+
+    def test_customer_cannot_review_accepted_booking(self):
+        """Customer cannot review a booking that is in accepted (in-progress) status."""
+        self.client.login(username='cust_priya', password='password123')
+        response = self.client.post(reverse('leave_review', kwargs={'booking_id': self.booking_accepted.id}), {
+            'rating': 4,
+            'comment': 'Attempting in-progress review.',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Review.objects.filter(booking=self.booking_accepted).exists())
+
+    def test_customer_cannot_review_cancelled_booking(self):
+        """Customer cannot review a cancelled booking."""
+        self.client.login(username='cust_priya', password='password123')
+        response = self.client.post(reverse('leave_review', kwargs={'booking_id': self.booking_cancelled.id}), {
+            'rating': 1,
+            'comment': 'Attempting cancelled booking review.',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Review.objects.filter(booking=self.booking_cancelled).exists())
+
+    def test_customer_cannot_review_another_customers_booking(self):
+        """Customer Amit cannot review Customer Priya's completed booking (strictly returns 404)."""
+        self.client.login(username='cust_amit', password='password123')
+        response = self.client.get(reverse('leave_review', kwargs={'booking_id': self.booking_completed.id}))
+        self.assertEqual(response.status_code, 404)
+
+        resp_post = self.client.post(reverse('leave_review', kwargs={'booking_id': self.booking_completed.id}), {
+            'rating': 5,
+            'comment': 'Unauthorized review attempt.',
+        })
+        self.assertEqual(resp_post.status_code, 404)
+        self.assertFalse(Review.objects.filter(booking=self.booking_completed).exists())
+
+    def test_provider_cannot_submit_customer_review(self):
+        """Provider accounts are rejected from submitting customer reviews."""
+        self.client.login(username='prov_ramesh', password='password123')
+        response = self.client.post(reverse('leave_review', kwargs={'booking_id': self.booking_completed.id}), {
+            'rating': 5,
+            'comment': 'Provider attempting self-review.',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse('home'))
+        self.assertFalse(Review.objects.filter(booking=self.booking_completed).exists())
+
+    def test_review_requires_rating(self):
+        """Submitting a review without selecting a rating must be rejected."""
+        self.client.login(username='cust_priya', password='password123')
+        response = self.client.post(reverse('leave_review', kwargs={'booking_id': self.booking_completed.id}), {
+            'rating': '',
+            'comment': 'Great service without rating.',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Review.objects.filter(booking=self.booking_completed).exists())
+
+    def test_review_requires_comment(self):
+        """Submitting a review with empty or too short comment (<10 chars) must be rejected."""
+        self.client.login(username='cust_priya', password='password123')
+        response = self.client.post(reverse('leave_review', kwargs={'booking_id': self.booking_completed.id}), {
+            'rating': 5,
+            'comment': 'Short',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Review.objects.filter(booking=self.booking_completed).exists())
+
+    def test_customer_cannot_submit_duplicate_review(self):
+        """A booking can have at most one customer review; duplicate reviews are prevented."""
+        self.client.login(username='cust_priya', password='password123')
+        # First review submission
+        self.client.post(reverse('leave_review', kwargs={'booking_id': self.booking_completed.id}), {
+            'rating': 5,
+            'comment': 'First review submitted successfully.',
+        })
+        self.assertEqual(Review.objects.filter(booking=self.booking_completed).count(), 1)
+
+        # Second review attempt on same booking
+        response = self.client.post(reverse('leave_review', kwargs={'booking_id': self.booking_completed.id}), {
+            'rating': 4,
+            'comment': 'Duplicate review attempt.',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Review.objects.filter(booking=self.booking_completed).count(), 1)
+
+    # -------------------------------------------------------------------------
+    # B. RATING AGGREGATION & DISPLAY TESTS
+    # -------------------------------------------------------------------------
+    def test_provider_average_rating_updates(self):
+        """Provider average_rating dynamically aggregates reviews using Avg('rating') from DB."""
+        # Booking 1 with 5 stars
+        Review.objects.create(
+            service=self.service,
+            customer=self.cust1_user,
+            booking=self.booking_completed,
+            rating=5,
+            comment='Superb professional service!'
+        )
+
+        # Booking 2 with 3 stars
+        booking2 = Booking.objects.create(
+            service=self.service,
+            customer=self.cust2_user,
+            booking_date=date.today() - timedelta(days=1),
+            booking_time=time(15, 0),
+            total_amount=Decimal('500.00'),
+            commission_rate=Decimal('10.00'),
+            status='completed',
+            address='Apartment 204, Kannur'
+        )
+        Review.objects.create(
+            service=self.service,
+            customer=self.cust2_user,
+            booking=booking2,
+            rating=3,
+            comment='Satisfactory, but arrived 15 minutes late.'
+        )
+
+        self.pro1.refresh_from_db()
+        # (5 + 3) / 2 = 4.0
+        self.assertEqual(self.pro1.average_rating, 4.0)
+
+    def test_service_reviews_display_correctly(self):
+        """Reviews and rating distribution appear cleanly on the service detail page."""
+        Review.objects.create(
+            service=self.service,
+            customer=self.cust1_user,
+            booking=self.booking_completed,
+            rating=5,
+            comment='Superb professional service with clean workmanship!'
+        )
+
+        response = self.client.get(reverse('service_detail', kwargs={'id': self.service.id}))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Superb professional service with clean workmanship!')
+        self.assertIn('rating_distribution', response.context)
+        self.assertEqual(response.context['rating_distribution'][0]['star'], 5)
+        self.assertEqual(response.context['rating_distribution'][0]['count'], 1)
+
+    # -------------------------------------------------------------------------
+    # C. NOTIFICATION LIFECYCLE TESTS
+    # -------------------------------------------------------------------------
+    def test_booking_creation_notifies_provider(self):
+        """Creating a new booking request notifies the service provider."""
+        self.client.login(username='cust_priya', password='password123')
+        response = self.client.post(reverse('book_service', kwargs={'service_id': self.service.id}), {
+            'booking_date': (date.today() + timedelta(days=4)).strftime('%Y-%m-%d'),
+            'booking_time': '09:00:00',
+            'address': 'Villa 99, Beach Road, Kannur',
+            'notes': 'Please check main bathroom line.',
+        })
+        self.assertEqual(response.status_code, 302)
+
+        notif = Notification.objects.filter(
+            recipient=self.provider1_user,
+            notification_type='booking_created'
+        ).first()
+        self.assertIsNotNone(notif)
+        self.assertIn('Priya', notif.message)
+        self.assertFalse(notif.is_read)
+
+    def test_booking_acceptance_notifies_customer(self):
+        """Provider accepting a booking sends a booking_accepted notification to the customer."""
+        self.client.login(username='prov_ramesh', password='password123')
+        response = self.client.post(reverse('provider_job_accept', kwargs={'booking_id': self.booking_pending.id}))
+        self.assertEqual(response.status_code, 302)
+
+        notif = Notification.objects.filter(
+            recipient=self.cust1_user,
+            notification_type='booking_accepted'
+        ).first()
+        self.assertIsNotNone(notif)
+        self.assertEqual(notif.title, 'Booking Accepted')
+        self.assertEqual(notif.booking, self.booking_pending)
+
+    def test_booking_decline_notifies_customer(self):
+        """Provider declining a booking sends a booking_declined notification to the customer."""
+        self.client.login(username='prov_ramesh', password='password123')
+        response = self.client.post(reverse('provider_job_decline', kwargs={'booking_id': self.booking_pending.id}))
+        self.assertEqual(response.status_code, 302)
+
+        notif = Notification.objects.filter(
+            recipient=self.cust1_user,
+            notification_type='booking_declined'
+        ).first()
+        self.assertIsNotNone(notif)
+        self.assertEqual(notif.title, 'Booking Declined')
+
+    def test_booking_cancellation_notifies_provider(self):
+        """Customer cancelling a pending booking sends a booking_cancelled notification to provider."""
+        self.client.login(username='cust_priya', password='password123')
+        response = self.client.post(reverse('cancel_booking', kwargs={'booking_id': self.booking_pending.id}))
+        self.assertEqual(response.status_code, 302)
+
+        notif = Notification.objects.filter(
+            recipient=self.provider1_user,
+            notification_type='booking_cancelled'
+        ).first()
+        self.assertIsNotNone(notif)
+        self.assertEqual(notif.title, 'Booking Cancelled')
+
+    def test_booking_completion_notifies_customer(self):
+        """Provider marking a job completed sends a booking_completed notification with review prompt to customer."""
+        self.client.login(username='prov_ramesh', password='password123')
+        response = self.client.post(reverse('provider_job_complete', kwargs={'booking_id': self.booking_accepted.id}))
+        self.assertEqual(response.status_code, 302)
+
+        notif = Notification.objects.filter(
+            recipient=self.cust1_user,
+            notification_type='booking_completed'
+        ).first()
+        self.assertIsNotNone(notif)
+        self.assertEqual(notif.title, 'Service Completed')
+        self.assertIn('review', notif.message.lower())
+
+    def test_review_creates_provider_notification(self):
+        """Customer submitting a review sends a review_received notification to the provider."""
+        self.client.login(username='cust_priya', password='password123')
+        self.client.post(reverse('leave_review', kwargs={'booking_id': self.booking_completed.id}), {
+            'rating': 5,
+            'comment': 'Outstanding speed and quality!',
+        })
+
+        notif = Notification.objects.filter(
+            recipient=self.provider1_user,
+            notification_type='review_received'
+        ).first()
+        self.assertIsNotNone(notif)
+        self.assertEqual(notif.title, 'New Review Received')
+        self.assertIn('5 stars', notif.message)
+
+    # -------------------------------------------------------------------------
+    # D. NOTIFICATION CENTER & SECURITY TESTS
+    # -------------------------------------------------------------------------
+    def test_notification_belongs_to_correct_user(self):
+        """Users can only view their own notifications in the notification center."""
+        # Notification for Priya
+        Notification.objects.create(
+            recipient=self.cust1_user,
+            notification_type='booking_accepted',
+            title='Priya Private Alert',
+            message='Confidential message for Priya.'
+        )
+        # Notification for Amit
+        Notification.objects.create(
+            recipient=self.cust2_user,
+            notification_type='booking_accepted',
+            title='Amit Private Alert',
+            message='Confidential message for Amit.'
+        )
+
+        self.client.login(username='cust_priya', password='password123')
+        response = self.client.get(reverse('notifications_list'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Priya Private Alert')
+        self.assertNotContains(response, 'Amit Private Alert')
+
+    def test_user_can_mark_notification_as_read(self):
+        """User can mark their own notification as read via POST endpoint."""
+        notif = Notification.objects.create(
+            recipient=self.cust1_user,
+            notification_type='booking_completed',
+            title='Service Completed',
+            message='Please review.',
+            is_read=False
+        )
+
+        self.client.login(username='cust_priya', password='password123')
+        response = self.client.post(reverse('notification_mark_read', kwargs={'id': notif.id}))
+        self.assertEqual(response.status_code, 302)
+
+        notif.refresh_from_db()
+        self.assertTrue(notif.is_read)
+
+    def test_user_can_mark_all_notifications_as_read(self):
+        """POST to /notifications/read-all/ marks only the current user's unread notifications as read."""
+        notif1 = Notification.objects.create(
+            recipient=self.cust1_user,
+            notification_type='booking_created',
+            title='Alert 1',
+            message='Msg 1',
+            is_read=False
+        )
+        notif2 = Notification.objects.create(
+            recipient=self.cust1_user,
+            notification_type='booking_accepted',
+            title='Alert 2',
+            message='Msg 2',
+            is_read=False
+        )
+        notif_other = Notification.objects.create(
+            recipient=self.cust2_user,
+            notification_type='booking_created',
+            title='Other User Alert',
+            message='Other Msg',
+            is_read=False
+        )
+
+        self.client.login(username='cust_priya', password='password123')
+        response = self.client.post(reverse('notification_mark_all_read'))
+        self.assertEqual(response.status_code, 302)
+
+        notif1.refresh_from_db()
+        notif2.refresh_from_db()
+        notif_other.refresh_from_db()
+
+        self.assertTrue(notif1.is_read)
+        self.assertTrue(notif2.is_read)
+        self.assertFalse(notif_other.is_read)
+
+
+class RGMVerifiableRevenueTests(TestCase):
+    """
+    Stage 7.5 — RGM Revenue Pilot & Verifiable Revenue Tracking Automated Test Suite.
+    Verifies:
+    1. Demo transactions excluded from verified revenue
+    2. Verified actual commission included in verified revenue
+    3. Unverified transactions excluded from verified revenue
+    4. Completed booking commission calculated correctly (10%)
+    5. Duplicate commission prevented
+    6. Subscription revenue calculated correctly (₹399)
+    7. Featured listing revenue calculated correctly (₹99)
+    8. Gross booking value separated from platform revenue
+    9. Provider earnings calculated correctly (90%)
+    10. Unauthorized users blocked from revenue evidence
+    11. Providers blocked from platform-wide revenue
+    12. Revenue target calculation (₹10,000 threshold)
+    13. Remaining revenue to target calculation
+    14. Verification status filtering (verified/pending/rejected)
+    15. Transaction reference and UTR handling
+    16. Admin revenue evidence filtering
+    17. Commercial receipt generation without fake GST/tax claims
+    """
+
+    def setUp(self):
+        self.client = Client()
+
+        # 1. Platform Admin
+        self.admin_user = User.objects.create_user(
+            username='rgm_admin',
+            password='password123',
+            first_name='RGM',
+            last_name='Auditor',
+            is_staff=True,
+            is_superuser=True
+        )
+
+        # 2. Provider
+        self.provider_user = User.objects.create_user(
+            username='rgm_provider',
+            password='password123',
+            first_name='Kishore',
+            last_name='Electric'
+        )
+        self.provider_profile = self.provider_user.profile
+        self.provider_profile.role = 'provider'
+        self.provider_profile.city = 'Kannur'
+        self.provider_profile.save()
+
+        # 3. Customer 1 (Booking Owner)
+        self.customer_user = User.objects.create_user(
+            username='rgm_customer',
+            password='password123',
+            first_name='Ananya',
+            last_name='Sharma'
+        )
+        self.cust_profile = self.customer_user.profile
+        self.cust_profile.role = 'customer'
+        self.cust_profile.save()
+
+        # 4. Customer 2 (Unauthorized User)
+        self.other_customer = User.objects.create_user(
+            username='other_customer',
+            password='password123',
+            first_name='Rahul',
+            last_name='Roy'
+        )
+
+        # 5. Category & Service
+        self.category = Category.objects.create(name='Electrical', icon_name='zap')
+        self.service = Service.objects.create(
+            provider=self.provider_profile,
+            category=self.category,
+            title='Inverter Wiring & Diagnostic',
+            description='Pure sinewave inverter wiring.',
+            price=Decimal('2500.00'),
+            duration_estimate='2 hours',
+            location='Kannur'
+        )
+
+        # 6. Completed Booking
+        self.booking_completed = Booking.objects.create(
+            service=self.service,
+            customer=self.customer_user,
+            booking_date=date.today() - timedelta(days=3),
+            booking_time=time(10, 0),
+            total_amount=Decimal('5000.00'),
+            commission_rate=Decimal('10.00'),
+            commission_amount=Decimal('500.00'),
+            status='completed',
+            address='Villa 44, Kannur'
+        )
+
+    # 1. Demo transactions excluded from verified revenue
+    def test_demo_transactions_excluded_from_verified_revenue(self):
+        """Synthetic demonstration transactions (is_demo=True) must not count toward verified pilot revenue."""
+        RevenueTransaction.objects.create(
+            revenue_type='commission',
+            amount=Decimal('500.00'),
+            provider=self.provider_profile,
+            booking=self.booking_completed,
+            description='Demo Commission',
+            status='completed',
+            is_demo=True,
+            verification_status='verified'
+        )
+        self.client.login(username='rgm_admin', password='password123')
+        response = self.client.get(reverse('platform_revenue'))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['verified_revenue'], Decimal('0.00'))
+        self.assertEqual(response.context['demo_revenue'], Decimal('500.00'))
+
+    # 2. Verified actual commission included
+    def test_verified_actual_commission_included(self):
+        """An actual transaction (is_demo=False) with verification_status='verified' must contribute to verified revenue."""
+        RevenueTransaction.objects.create(
+            revenue_type='commission',
+            amount=Decimal('350.00'),
+            provider=self.provider_profile,
+            booking=self.booking_completed,
+            description='Actual Commission',
+            status='completed',
+            is_demo=False,
+            verification_status='verified',
+            has_evidence=True
+        )
+        self.client.login(username='rgm_admin', password='password123')
+        response = self.client.get(reverse('platform_revenue'))
+        self.assertEqual(response.context['verified_revenue'], Decimal('350.00'))
+        self.assertEqual(response.context['verified_commission_revenue'], Decimal('350.00'))
+
+    # 3. Unverified transaction excluded
+    def test_unverified_transaction_excluded(self):
+        """Actual transactions awaiting audit (verification_status='pending') must not count as verified revenue."""
+        RevenueTransaction.objects.create(
+            revenue_type='commission',
+            amount=Decimal('400.00'),
+            provider=self.provider_profile,
+            booking=self.booking_completed,
+            description='Pending Commission',
+            status='completed',
+            is_demo=False,
+            verification_status='pending'
+        )
+        self.client.login(username='rgm_admin', password='password123')
+        response = self.client.get(reverse('platform_revenue'))
+        self.assertEqual(response.context['verified_revenue'], Decimal('0.00'))
+        self.assertEqual(response.context['pending_audit_count'], 1)
+
+    # 4. Completed booking commission calculated correctly
+    def test_completed_booking_commission_calculated_correctly(self):
+        """When an accepted booking is completed, 10% platform commission is accurately recorded."""
+        booking = Booking.objects.create(
+            service=self.service,
+            customer=self.customer_user,
+            booking_date=date.today(),
+            booking_time=time(11, 0),
+            total_amount=Decimal('4000.00'),
+            commission_rate=Decimal('10.00'),
+            status='accepted',
+            address='Villa 44, Kannur'
+        )
+        self.client.login(username='rgm_provider', password='password123')
+        self.client.post(reverse('provider_job_complete', kwargs={'booking_id': booking.id}))
+
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, 'completed')
+        self.assertEqual(booking.commission_amount, Decimal('400.00'))
+
+        tx = RevenueTransaction.objects.filter(revenue_type='commission', booking=booking).first()
+        self.assertIsNotNone(tx)
+        self.assertEqual(tx.amount, Decimal('400.00'))
+        self.assertEqual(tx.provider, self.provider_profile)
+
+    # 5. Duplicate commission prevented
+    def test_duplicate_commission_prevented(self):
+        """Repeated completion attempts on the same booking must not generate duplicate commission transactions."""
+        booking = Booking.objects.create(
+            service=self.service,
+            customer=self.customer_user,
+            booking_date=date.today(),
+            booking_time=time(11, 0),
+            total_amount=Decimal('3000.00'),
+            commission_rate=Decimal('10.00'),
+            status='accepted',
+            address='Villa 44, Kannur'
+        )
+        self.client.login(username='rgm_provider', password='password123')
+        self.client.post(reverse('provider_job_complete', kwargs={'booking_id': booking.id}))
+        self.client.post(reverse('provider_job_complete', kwargs={'booking_id': booking.id}))
+
+        count = RevenueTransaction.objects.filter(revenue_type='commission', booking=booking).count()
+        self.assertEqual(count, 1)
+
+    # 6. Subscription revenue calculated correctly
+    def test_subscription_revenue_calculated_correctly(self):
+        """Provider Pro upgrade must generate an exact ₹399 subscription revenue transaction."""
+        self.client.login(username='rgm_provider', password='password123')
+        self.client.post(reverse('provider_subscription'), {'action': 'upgrade_pro'})
+
+        tx = RevenueTransaction.objects.filter(revenue_type='subscription', provider=self.provider_profile).first()
+        self.assertIsNotNone(tx)
+        self.assertEqual(tx.amount, Decimal('399.00'))
+
+    # 7. Featured listing revenue calculated correctly
+    def test_featured_listing_revenue_calculated_correctly(self):
+        """Promoting a service must generate an exact ₹99 featured listing transaction."""
+        self.client.login(username='rgm_provider', password='password123')
+        self.client.post(reverse('provider_feature_service', kwargs={'service_id': self.service.id}))
+
+        tx = RevenueTransaction.objects.filter(revenue_type='featured', service=self.service).first()
+        self.assertIsNotNone(tx)
+        self.assertEqual(tx.amount, Decimal('99.00'))
+
+    # 8. Gross booking value separated from revenue
+    def test_gross_booking_value_separated_from_revenue(self):
+        """Gross Booking Value must reflect total customer payment, strictly separate from Servora commission."""
+        self.client.login(username='rgm_admin', password='password123')
+        response = self.client.get(reverse('platform_revenue'))
+        # Booking total is ₹5,000, while commission is ₹500
+        self.assertEqual(response.context['gross_booking_value'], Decimal('5000.00'))
+        self.assertNotEqual(response.context['gross_booking_value'], response.context['commission_revenue'])
+
+    # 9. Provider earnings calculated correctly
+    def test_provider_earnings_calculated_correctly(self):
+        """Provider net earnings must be exactly (Gross Booking Value - 10% Commission)."""
+        self.client.login(username='rgm_admin', password='password123')
+        response = self.client.get(reverse('platform_revenue'))
+        # ₹5,000 - ₹500 = ₹4,500
+        self.assertEqual(response.context['provider_earnings_total'], Decimal('4500.00'))
+
+    # 10. Unauthorized user cannot access revenue evidence
+    def test_unauthorized_user_cannot_access_revenue_evidence(self):
+        """Regular customer accounts cannot access the RGM revenue evidence dashboard."""
+        self.client.login(username='rgm_customer', password='password123')
+        response = self.client.get(reverse('platform_revenue_evidence'))
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse('home'))
+
+    # 11. Provider cannot access platform-wide revenue
+    def test_provider_cannot_access_platform_wide_revenue(self):
+        """Service provider accounts cannot access platform revenue or evidence."""
+        self.client.login(username='rgm_provider', password='password123')
+        response = self.client.get(reverse('platform_revenue'))
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse('home'))
+
+    # 12. Revenue target calculation
+    def test_revenue_target_calculation(self):
+        """Target progress percentage must accurately reflect verified revenue against the ₹10,000 threshold."""
+        RevenueTransaction.objects.create(
+            revenue_type='commission',
+            amount=Decimal('2500.00'),
+            provider=self.provider_profile,
+            description='Pilot Commission',
+            status='completed',
+            is_demo=False,
+            verification_status='verified',
+            has_evidence=True
+        )
+        self.client.login(username='rgm_admin', password='password123')
+        response = self.client.get(reverse('platform_revenue'))
+        self.assertEqual(response.context['target_revenue'], Decimal('10000.00'))
+        # 2,500 / 10,000 = 25%
+        self.assertEqual(response.context['target_progress_percent'], 25)
+
+    # 13. Remaining revenue calculation
+    def test_remaining_revenue_calculation(self):
+        """Remaining target calculation must equal max(0, target - verified_revenue)."""
+        RevenueTransaction.objects.create(
+            revenue_type='commission',
+            amount=Decimal('3000.00'),
+            provider=self.provider_profile,
+            description='Pilot Commission',
+            status='completed',
+            is_demo=False,
+            verification_status='verified',
+            has_evidence=True
+        )
+        self.client.login(username='rgm_admin', password='password123')
+        response = self.client.get(reverse('platform_revenue'))
+        # 10,000 - 3,000 = 7,000
+        self.assertEqual(response.context['remaining_to_target'], Decimal('7000.00'))
+
+    # 14. Verification status filtering
+    def test_verification_status_filtering(self):
+        """Evidence page must accurately filter records by verification status."""
+        RevenueTransaction.objects.create(
+            revenue_type='commission', amount=Decimal('100.00'),
+            provider=self.provider_profile, status='completed',
+            is_demo=False, verification_status='verified'
+        )
+        RevenueTransaction.objects.create(
+            revenue_type='commission', amount=Decimal('200.00'),
+            provider=self.provider_profile, status='completed',
+            is_demo=False, verification_status='pending'
+        )
+        RevenueTransaction.objects.create(
+            revenue_type='commission', amount=Decimal('300.00'),
+            provider=self.provider_profile, status='completed',
+            is_demo=False, verification_status='rejected'
+        )
+
+        self.client.login(username='rgm_admin', password='password123')
+        resp_verified = self.client.get(reverse('platform_revenue_evidence'), {'verification': 'verified'})
+        self.assertEqual(resp_verified.context['transactions'].count(), 1)
+
+        resp_rejected = self.client.get(reverse('platform_revenue_evidence'), {'verification': 'rejected'})
+        self.assertEqual(resp_rejected.context['transactions'].count(), 1)
+
+    # 15. Transaction reference handling
+    def test_transaction_reference_handling(self):
+        """Audit CSV export must properly include UTR and payment method for scrutiny."""
+        RevenueTransaction.objects.create(
+            revenue_type='commission',
+            amount=Decimal('500.00'),
+            provider=self.provider_profile,
+            description='Test UTR Commission',
+            status='completed',
+            is_demo=False,
+            verification_status='verified',
+            transaction_reference='UPI-UTR-987654321012',
+            payment_method='upi',
+            has_evidence=True
+        )
+        self.client.login(username='rgm_admin', password='password123')
+        response = self.client.get(reverse('platform_revenue_evidence'), {'export': 'csv'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'text/csv')
+        content = response.content.decode('utf-8')
+        self.assertIn('UPI-UTR-987654321012', content)
+        self.assertIn('UPI / QR Transfer', content)
+
+    # 16. Admin revenue filtering
+    def test_admin_revenue_filtering(self):
+        """Admin can toggle between actual pilot records and demo seed records."""
+        RevenueTransaction.objects.create(
+            revenue_type='commission', amount=Decimal('100.00'),
+            provider=self.provider_profile, status='completed', is_demo=False
+        )
+        RevenueTransaction.objects.create(
+            revenue_type='commission', amount=Decimal('200.00'),
+            provider=self.provider_profile, status='completed', is_demo=True
+        )
+
+        self.client.login(username='rgm_admin', password='password123')
+        resp_actual = self.client.get(reverse('platform_revenue_evidence'), {'data': 'actual'})
+        self.assertEqual(resp_actual.context['transactions'].count(), 1)
+
+        resp_demo = self.client.get(reverse('platform_revenue_evidence'), {'data': 'demo'})
+        self.assertEqual(resp_demo.context['transactions'].count(), 1)
+
+    # 17. No fake GST information generated
+    def test_no_fake_gst_information_generated(self):
+        """Commercial receipt page must accurately display transaction details without fake GSTIN or tax compliance claims."""
+        self.client.login(username='rgm_customer', password='password123')
+        response = self.client.get(reverse('booking_receipt', kwargs={'booking_id': self.booking_completed.id}))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'services/receipt.html')
+        self.assertContains(response, 'SERVORA COMMERCIAL SERVICE RECEIPT')
+        self.assertNotContains(response, 'GSTIN')
+        self.assertNotContains(response, '18% GST')
+        self.assertNotContains(response, 'Tax Invoice')
+
+
 
 
 

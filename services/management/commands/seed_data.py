@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth.models import User
 from users.models import UserProfile, ProviderSubscription
-from services.models import Category, Service, Booking, Review, FeaturedListing, RevenueTransaction
+from services.models import Category, Service, Booking, Review, FeaturedListing, RevenueTransaction, Notification
 from datetime import date, time, timedelta
 from decimal import Decimal
 
@@ -228,16 +228,33 @@ class Command(BaseCommand):
             sub.save()
 
             # Record subscription revenue transaction idempotently
-            if not RevenueTransaction.objects.filter(revenue_type='subscription', provider=prov).exists():
+            sub_tx = RevenueTransaction.objects.filter(revenue_type='subscription', provider=prov).first()
+            if not sub_tx:
                 RevenueTransaction.objects.create(
                     revenue_type='subscription',
                     amount=Decimal('399.00'),
                     provider=prov,
-                    description=f"Pro Plan Monthly Subscription (₹399/mo) for {prov.user.get_full_name()}",
-                    status='completed'
+                    description=f"Pro Plan Monthly Subscription (INR 399/mo) for {prov.user.get_full_name()}",
+                    status='completed',
+                    is_demo=True,
+                    verification_status='pending'
                 )
+            else:
+                sub_tx.is_demo = True
+                sub_tx.save(update_fields=['is_demo'])
 
-        # 7. Featured Listings (7 Listings @ ₹99 = ₹693 Featured Revenue)
+            # Notification for Pro Subscription
+            Notification.objects.get_or_create(
+                recipient=prov.user,
+                notification_type='subscription_activated',
+                title="Pro Plan Activated",
+                defaults={
+                    'message': "Your Servora Pro subscription is now active. Enjoy verified badges, featured boosts, and 0% listing fee.",
+                    'is_read': False,
+                }
+            )
+
+        # 7. Featured Listings (7 Listings @ INR 99 = INR 693 Featured Revenue)
         featured_indices = [0, 2, 4, 7, 8, 10, 11]
         for idx in featured_indices:
             if idx < len(created_services):
@@ -254,54 +271,72 @@ class Command(BaseCommand):
                 svc.is_featured = True
                 svc.save(update_fields=['is_featured'])
 
-                if not RevenueTransaction.objects.filter(revenue_type='featured', service=svc).exists():
+                feat_tx = RevenueTransaction.objects.filter(revenue_type='featured', service=svc).first()
+                if not feat_tx:
                     RevenueTransaction.objects.create(
                         revenue_type='featured',
                         amount=Decimal('99.00'),
                         provider=svc.provider,
                         service=svc,
-                        description=f"3-Day Featured Promotion for '{svc.title}' (₹99)",
-                        status='completed'
+                        description=f"3-Day Featured Promotion for '{svc.title}' (INR 99)",
+                        status='completed',
+                        is_demo=True,
+                        verification_status='pending'
                     )
+                else:
+                    feat_tx.is_demo = True
+                    feat_tx.save(update_fields=['is_demo'])
 
-        # 8. Completed Bookings with 10% Commission (8 Bookings = ₹3,500 Commission Revenue)
+                # Notification for Featured Listing
+                Notification.objects.get_or_create(
+                    recipient=svc.provider.user,
+                    notification_type='featured_listing_activated',
+                    service=svc,
+                    defaults={
+                        'title': "Service Featured",
+                        'message': f"Your '{svc.title}' service is now featured for 3 days on the Servora marketplace homepage and search.",
+                        'is_read': False,
+                    }
+                )
+
+        # 8. Completed Bookings with 10% Commission (8 Bookings = INR 3,500 Commission Revenue)
         bookings_seed_specs = [
-            # 1: John Mathew - Plumbing (₹500 commission)
+            # 1: John Mathew - Plumbing (INR 500 commission)
             (created_services[0], customers[0], date.today() - timedelta(days=5), time(10, 0),
              Decimal('5000.00'), Decimal('500.00'), 'Fixed major bathroom pipe rupture under sink.',
              'House 14, Royal Greens, Kannur', 5, 'John Mathew was punctual, professional, and diagnosed the leak within 10 minutes.'),
 
-            # 2: Anita Deep Cleaning (₹280 commission)
+            # 2: Anita Deep Cleaning (INR 280 commission)
             (created_services[4], customers[1], date.today() - timedelta(days=3), time(9, 30),
              Decimal('2800.00'), Decimal('280.00'), 'Complete flat sanitization before housewarming.',
              'Flat 302, Palm Heights, Kannur', 5, 'Anita and her team did a spotless deep clean! Very happy with the freshness.'),
 
-            # 3: Rahul Electrical (₹120 commission)
+            # 3: Rahul Electrical (INR 120 commission)
             (created_services[2], customers[2], date.today() - timedelta(days=1), time(14, 0),
              Decimal('1200.00'), Decimal('120.00'), 'MCB tripping issue inspection.',
              'Villa 7, Ocean View, Kannur', 5, 'Rahul identified the faulty earthing wire quickly. Very competent.'),
 
-            # 4: Vikram Painter (₹450 commission)
+            # 4: Vikram Painter (INR 450 commission)
             (created_services[8], customers[0], date.today() - timedelta(days=7), time(8, 30),
              Decimal('4500.00'), Decimal('450.00'), 'Living room accent wall painting.',
              'House 14, Royal Greens, Bengaluru', 4, 'Super clean finish! Vikram used dustless mechanized sanding.'),
 
-            # 5: Vikram Painting Whole Apartment (₹800 commission)
+            # 5: Vikram Painting Whole Apartment (INR 800 commission)
             (created_services[8], customers[1], date.today() - timedelta(days=4), time(9, 0),
              Decimal('8000.00'), Decimal('800.00'), 'Full 2BHK interior repaint.',
              'Block B-402, Skyline Towers, Bengaluru', 5, 'Flawless work across all bedrooms and hall.'),
 
-            # 6: John Mathew Water Tank (₹450 commission)
+            # 6: John Mathew Water Tank (INR 450 commission)
             (created_services[1], customers[2], date.today() - timedelta(days=2), time(11, 0),
              Decimal('4500.00'), Decimal('450.00'), 'Overhead water tank pressure descaling and pipe maintenance.',
              'Seaside Villa 12, Kannur', 5, 'Prompt and thorough. Water pressure restored completely.'),
 
-            # 7: Anita Sofa & Kitchen Deep Clean (₹500 commission)
+            # 7: Anita Sofa & Kitchen Deep Clean (INR 500 commission)
             (created_services[5], customers[0], date.today() - timedelta(days=1), time(13, 0),
              Decimal('5000.00'), Decimal('500.00'), 'Commercial grade kitchen and upholstery deep sanitization.',
              'Villa 14, Kannur', 5, 'Exceptional attention to detail by Anita and staff.'),
 
-            # 8: Suresh Modular Kitchen Repair (₹400 commission)
+            # 8: Suresh Modular Kitchen Repair (INR 400 commission)
             (created_services[7], customers[1], date.today(), time(15, 0),
              Decimal('4000.00'), Decimal('400.00'), 'Hinge realignment and drawer channel replacements.',
              'Flat 101, Green Meadows, Kochi', 5, 'Suresh restored our kitchen cabinets perfectly.'),
@@ -338,9 +373,21 @@ class Command(BaseCommand):
                         'comment': review_text,
                     }
                 )
+                # Review notification for provider
+                Notification.objects.get_or_create(
+                    recipient=svc.provider.user,
+                    notification_type='review_received',
+                    booking=b,
+                    defaults={
+                        'service': svc,
+                        'title': "New Review Received",
+                        'message': f"{cust.get_full_name() or cust.username} left a {rating}-star review for '{svc.title}': \"{review_text[:60]}...\"",
+                        'is_read': False,
+                    }
+                )
 
             # Record booking commission platform revenue transaction
-            RevenueTransaction.objects.get_or_create(
+            tx, created = RevenueTransaction.objects.get_or_create(
                 revenue_type='commission',
                 booking=b,
                 defaults={
@@ -348,9 +395,40 @@ class Command(BaseCommand):
                     'provider': svc.provider,
                     'description': f"10% Platform Commission on Booking #SVR{b.id:05d} ({svc.title})",
                     'status': 'completed',
+                    'is_demo': True,
+                    'verification_status': 'pending',
+                }
+            )
+            if not created:
+                tx.is_demo = True
+                tx.save(update_fields=['is_demo'])
+
+            # Notifications for Booking
+            Notification.objects.get_or_create(
+                recipient=svc.provider.user,
+                notification_type='booking_created',
+                booking=b,
+                defaults={
+                    'service': svc,
+                    'title': "New Booking Request",
+                    'message': f"{cust.get_full_name() or cust.username} requested {svc.title} for {b_date} at {b_time.strftime('%I:%M %p')}.",
+                    'is_read': True,
+                }
+            )
+
+            Notification.objects.get_or_create(
+                recipient=cust,
+                notification_type='booking_completed',
+                booking=b,
+                defaults={
+                    'service': svc,
+                    'title': "Service Completed",
+                    'message': f"Your {svc.title} booking has been marked completed. You can now leave a review.",
+                    'is_read': False,
                 }
             )
 
         self.stdout.write(self.style.SUCCESS(
-            "Servora marketplace populated with full realistic data and INR 6,188 Stage 6 monetization revenue!"
+            "Servora marketplace populated with full realistic data, INR 6,188 Stage 6 monetization revenue, and Stage 7 reviews & notifications!"
         ))
+

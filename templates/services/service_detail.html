@@ -119,6 +119,20 @@
             </div>
           </div>
 
+          {% if rating_distribution %}
+            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 14px; padding: 14px 18px; margin-bottom: 20px;">
+              {% for dist in rating_distribution %}
+                <div style="display: flex; align-items: center; gap: 10px; font-size: 0.82rem; margin-bottom: 5px;">
+                  <span style="width: 28px; font-weight: 700; color: #475569;">{{ dist.star }} ★</span>
+                  <div style="flex: 1; height: 8px; background: #E2E8F0; border-radius: 9999px; overflow: hidden;">
+                    <div style="width: {{ dist.percent }}%; height: 100%; background: #F59E0B; border-radius: 9999px;"></div>
+                  </div>
+                  <span style="width: 32px; text-align: right; color: #64748B; font-weight: 600;">{{ dist.count }}</span>
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+
           {% if reviews %}
             <div class="reviews-list">
               {% for review in reviews %}

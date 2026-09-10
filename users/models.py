@@ -43,9 +43,10 @@ class UserProfile(models.Model):
     @property
     def average_rating(self):
         from services.models import Review
-        reviews = Review.objects.filter(service__provider=self)
-        if reviews.exists():
-            return round(sum(r.rating for r in reviews) / reviews.count(), 1)
+        from django.db.models import Avg
+        avg_val = Review.objects.filter(service__provider=self).aggregate(Avg('rating'))['rating__avg']
+        if avg_val is not None:
+            return round(avg_val, 1)
         return 5.0
 
     @property

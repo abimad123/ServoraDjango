@@ -1,7 +1,7 @@
 from django import forms
 from datetime import date, datetime, time
 from decimal import Decimal
-from .models import Booking, Service
+from .models import Booking, Service, Review
 
 # Pre-defined allowable time slots matching the UI design specs
 ALLOWED_TIME_SLOTS = [
@@ -152,4 +152,60 @@ class ServiceForm(forms.ModelForm):
         if price is not None and price <= 0:
             raise forms.ValidationError("Service price must be greater than zero.")
         return price
+
+
+class ReviewForm(forms.ModelForm):
+    """
+    Form for customers to submit star ratings and detailed service feedback.
+    """
+    rating = forms.ChoiceField(
+        choices=[
+            (5, '★★★★★ (5/5) — Excellent'),
+            (4, '★★★★☆ (4/5) — Very Good'),
+            (3, '★★★☆☆ (3/5) — Average'),
+            (2, '★★☆☆☆ (2/5) — Below Average'),
+            (1, '★☆☆☆☆ (1/5) — Poor'),
+        ],
+        required=True,
+        widget=forms.Select(attrs={
+            'class': 'form-select',
+            'id': 'id_rating',
+        })
+    )
+    comment = forms.CharField(
+        required=True,
+        min_length=10,
+        max_length=1000,
+        widget=forms.Textarea(attrs={
+            'class': 'form-textarea',
+            'rows': 4,
+            'placeholder': 'Share your experience with the service, punctuality, and quality of work (minimum 10 characters)...',
+            'id': 'id_comment',
+        }),
+        error_messages={
+            'required': 'Please share a comment explaining your review.',
+            'min_length': 'Your review comment should be at least 10 characters long.',
+        }
+    )
+
+    class Meta:
+        model = Review
+        fields = ['rating', 'comment']
+
+    def clean_rating(self):
+        rating = self.cleaned_data.get('rating')
+        try:
+            val = int(rating)
+            if val < 1 or val > 5:
+                raise forms.ValidationError("Rating must be between 1 and 5 stars.")
+            return val
+        except (ValueError, TypeError):
+            raise forms.ValidationError("Please select a valid rating between 1 and 5.")
+
+    def clean_comment(self):
+        comment = self.cleaned_data.get('comment', '').strip()
+        if not comment or len(comment) < 10:
+            raise forms.ValidationError("Please provide at least 10 characters of detailed feedback.")
+        return comment
+
 

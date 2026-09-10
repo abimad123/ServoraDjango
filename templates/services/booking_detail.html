@@ -111,25 +111,65 @@
         </div>
       </div>
 
+      <!-- Customer Review Section -->
+      {% if booking.review %}
+        <div style="background: #FFFBEB; border: 1px solid #FDE68A; border-radius: var(--radius-md); padding: 20px; margin-bottom: 24px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div style="font-size: 0.85rem; font-weight: 800; text-transform: uppercase; color: #D97706; letter-spacing: 0.05em;">
+              Customer Verified Review
+            </div>
+            <div style="color: #F59E0B; font-size: 1.1rem;">
+              {% for i in "12345" %}
+                {% if forloop.counter <= booking.review.rating %}★{% else %}☆{% endif %}
+              {% endfor %}
+            </div>
+          </div>
+          <p style="margin: 0; color: #78350F; font-size: 0.95rem; font-style: italic;">
+            "{{ booking.review.comment }}"
+          </p>
+          <div style="font-size: 0.75rem; color: #B45309; margin-top: 8px;">
+            Reviewed on {{ booking.review.created_at|date:"F d, Y" }}
+          </div>
+        </div>
+      {% elif booking.status == 'completed' and is_customer_owner %}
+        <div style="background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: var(--radius-md); padding: 18px 20px; margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <div style="font-size: 0.95rem; font-weight: 800; color: #166534;">Service Successfully Completed!</div>
+            <div style="font-size: 0.85rem; color: #15803D;">Please rate your experience with {{ booking.service.provider.user.first_name }} to help the community.</div>
+          </div>
+          <a href="{% url 'leave_review' booking.id %}" class="btn btn-primary" style="background: #FF5A36; border-color: #FF5A36; padding: 8px 18px; font-weight: 800;">
+            ★ Leave a Review
+          </a>
+        </div>
+      {% endif %}
+
       <!-- Actions -->
       <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
-        {% if is_customer_owner %}
-          <a href="{% url 'my_bookings' %}" class="btn btn-outline">
-            ← Back to My Bookings
-          </a>
-
-          {% if booking.status == 'pending' %}
-            <form method="POST" action="{% url 'cancel_booking' booking.id %}" onsubmit="return confirm('Are you sure you want to cancel this booking? This will immediately free up the scheduled time slot.');">
-              {% csrf_token %}
-              <button type="submit" class="btn" style="background: var(--status-danger-bg); color: var(--status-danger-text); border: 1px solid #FECACA;">
-                Cancel Booking
-              </button>
-            </form>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          {% if is_customer_owner %}
+            <a href="{% url 'my_bookings' %}" class="btn btn-outline">
+              ← Back to My Bookings
+            </a>
+          {% else %}
+            <a href="{% url 'provider_bookings' %}" class="btn btn-outline">
+              ← Back to Provider Bookings
+            </a>
           {% endif %}
-        {% else %}
-          <a href="{% url 'provider_bookings' %}" class="btn btn-outline">
-            ← Back to Provider Bookings
-          </a>
+
+          {% if booking.status == 'completed' %}
+            <a href="{% url 'booking_receipt' booking.id %}" target="_blank" class="btn btn-outline" style="background: #F8FAFC; border-color: #CBD5E1; color: #1E293B;">
+              📄 View Commercial Receipt
+            </a>
+          {% endif %}
+        </div>
+
+        {% if is_customer_owner and booking.status == 'pending' %}
+          <form method="POST" action="{% url 'cancel_booking' booking.id %}" onsubmit="return confirm('Are you sure you want to cancel this booking? This will immediately free up the scheduled time slot.');">
+            {% csrf_token %}
+            <button type="submit" class="btn" style="background: var(--status-danger-bg); color: var(--status-danger-text); border: 1px solid #FECACA;">
+              Cancel Booking
+            </button>
+          </form>
         {% endif %}
       </div>
     </div>

@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Leave a Review for {{ service.title }} – Servora{% endblock %}
+
+{% block extra_css %}
+  <link rel="stylesheet" href="{% static 'css/customer.css' %}">
+  <link rel="stylesheet" href="{% static 'css/booking.css' %}">
+  <style>
+    .review-form-container {
+      max-width: 680px;
+      margin: 40px auto 80px;
+      background: #FFFFFF;
+      border: 1px solid var(--border-subtle, #E2E8F0);
+      border-radius: 24px;
+      padding: 40px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04);
+    }
+    .review-service-pill {
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      border-radius: 16px;
+      padding: 16px 20px;
+      margin-bottom: 28px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .review-service-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      background: rgba(255, 90, 54, 0.1);
+      color: #FF5A36;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+    }
+    .star-rating-label {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #1E293B;
+      margin-bottom: 8px;
+      display: block;
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="container">
+    <div class="review-form-container">
+      <div style="margin-bottom: 24px;">
+        <a href="{% url 'booking_detail' booking.id %}" style="display: inline-flex; align-items: center; gap: 6px; color: #64748B; font-weight: 700; font-size: 0.88rem; text-decoration: none; margin-bottom: 12px;">
+          &larr; Back to Booking Details
+        </a>
+        <span class="section-subtitle" style="display: block;">Feedback & Rating</span>
+        <h1 style="font-size: 1.85rem; margin-bottom: 6px; color: #1E293B;">How Was Your Service Experience?</h1>
+        <p class="text-sm" style="color: #64748B;">Your honest review helps homeowners in your area choose trusted local professionals.</p>
+      </div>
+
+      <!-- Service & Provider Summary Box -->
+      <div class="review-service-pill">
+        <div class="review-service-icon">
+          ★
+        </div>
+        <div style="flex: 1;">
+          <div style="font-size: 1.1rem; font-weight: 800; color: #1E293B;">{{ service.title }}</div>
+          <div style="font-size: 0.85rem; color: #64748B;">
+            Provided by <strong>{{ service.provider.user.get_full_name|default:service.provider.user.username }}</strong> &bull; Completed on {{ booking.booking_date|date:"M d, Y" }}
+          </div>
+        </div>
+      </div>
+
+      <!-- Review Form -->
+      <form method="POST">
+        {% csrf_token %}
+
+        <div class="form-group" style="margin-bottom: 24px;">
+          <label for="id_rating" class="star-rating-label">Overall Rating</label>
+          {{ form.rating }}
+          {% if form.rating.errors %}
+            <div class="form-error" style="color: #EF4444; font-size: 0.85rem; margin-top: 6px;">{{ form.rating.errors.0 }}</div>
+          {% endif %}
+        </div>
+
+        <div class="form-group" style="margin-bottom: 28px;">
+          <label for="id_comment" class="star-rating-label">Your Review & Comments</label>
+          {{ form.comment }}
+          <span style="font-size: 0.78rem; color: #94A3B8; display: block; margin-top: 6px;">
+            Minimum 10 characters. Mention punctuality, quality of repair/service, and customer satisfaction.
+          </span>
+          {% if form.comment.errors %}
+            <div class="form-error" style="color: #EF4444; font-size: 0.85rem; margin-top: 6px;">{{ form.comment.errors.0 }}</div>
+          {% endif %}
+        </div>
+
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+          <a href="{% url 'booking_detail' booking.id %}" class="btn btn-ghost">
+            Cancel
+          </a>
+          <button type="submit" class="btn btn-primary" style="padding: 14px 28px; font-weight: 800; font-size: 1rem; border-radius: 14px;">
+            Submit Verified Review
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</section>
+{% endblock %}

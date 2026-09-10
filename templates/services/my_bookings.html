@@ -78,9 +78,22 @@
                   {% endif %}
                 </td>
                 <td style="text-align: right;">
-                  <a href="{% url 'booking_detail' b.id %}" class="btn btn-outline btn-sm">
-                    View Details
-                  </a>
+                  <div style="display: inline-flex; align-items: center; gap: 8px;">
+                    {% if b.status == 'completed' %}
+                      {% if b.review %}
+                        <span style="background: rgba(245, 158, 11, 0.1); color: #D97706; font-size: 0.75rem; font-weight: 800; padding: 4px 10px; border-radius: 9999px;">
+                          ★ {{ b.review.rating }} Reviewed
+                        </span>
+                      {% else %}
+                        <a href="{% url 'leave_review' b.id %}" class="btn btn-primary btn-sm" style="background: #FF5A36; border-color: #FF5A36; padding: 4px 10px; font-size: 0.78rem;">
+                          ★ Review
+                        </a>
+                      {% endif %}
+                    {% endif %}
+                    <a href="{% url 'booking_detail' b.id %}" class="btn btn-outline btn-sm">
+                      View
+                    </a>
+                  </div>
                 </td>
               </tr>
             {% endfor %}

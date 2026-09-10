@@ -189,12 +189,24 @@ class RevenueTransaction(models.Model):
     REVENUE_TYPES = (
         ('commission', 'Booking Commission'),
         ('subscription', 'Pro Subscription'),
-        ('featured', 'Featured Listing'),
+        ('featured', 'Featured Service Listing'),
     )
     STATUS_CHOICES = (
         ('completed', 'Completed'),
         ('pending', 'Pending'),
         ('failed', 'Failed'),
+    )
+    VERIFICATION_STATUS_CHOICES = (
+        ('pending', 'Pending Verification'),
+        ('verified', 'Verified'),
+        ('rejected', 'Rejected'),
+    )
+    PAYMENT_METHOD_CHOICES = (
+        ('upi', 'UPI / QR Transfer'),
+        ('bank_transfer', 'Bank IMPS/NEFT'),
+        ('card', 'Debit / Credit Card'),
+        ('other', 'Other Digital Payment'),
+        ('cash', 'Cash (Ineligible for RGM)'),
     )
 
     revenue_type = models.CharField(max_length=20, choices=REVENUE_TYPES)
@@ -204,6 +216,45 @@ class RevenueTransaction(models.Model):
     service = models.ForeignKey(Service, on_delete=models.SET_NULL, null=True, blank=True, related_name='revenue_transactions')
     description = models.CharField(max_length=255)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='completed')
+
+    # Stage 7.5: Verifiable Pilot & Audit Fields
+    is_demo = models.BooleanField(
+        default=False,
+        help_text="True if synthetic demonstration/seed transaction; False if genuine pilot record."
+    )
+    verification_status = models.CharField(
+        max_length=20,
+        choices=VERIFICATION_STATUS_CHOICES,
+        default='pending',
+        help_text="Administrative audit verification state."
+    )
+    transaction_reference = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Bank/UPI UTR or transfer reference number."
+    )
+    payment_method = models.CharField(
+        max_length=30,
+        blank=True,
+        null=True,
+        choices=PAYMENT_METHOD_CHOICES,
+        help_text="Actual electronic payment method used."
+    )
+    payment_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Date genuine payment was credited in bank/account."
+    )
+    has_evidence = models.BooleanField(
+        default=False,
+        help_text="True if external proof (bank statement, customer receipt) has been inspected."
+    )
+    evidence_note = models.TextField(
+        blank=True,
+        help_text="Auditor notes regarding banking reference, invoice, or screenshot verification."
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -217,5 +268,60 @@ class RevenueTransaction(models.Model):
         ]
 
     def __str__(self):
-        return f"[{self.get_revenue_type_display()}] ₹{self.amount} - {self.provider.user.username} ({self.created_at.strftime('%d %b %Y')})"
+        demo_tag = " [DEMO]" if self.is_demo else ""
+        verif_tag = f" ({self.get_verification_status_display()})" if not self.is_demo else ""
+        return f"[{self.get_revenue_type_display()}]{demo_tag} ₹{self.amount} - {self.provider.user.username}{verif_tag}"
+
+
+
+class Notification(models.Model):
+    """
+    Database-backed notifications for customers and service providers.
+    Supports booking lifecycle events, reviews, subscriptions, and featured promotions.
+    """
+    NOTIFICATION_TYPES = (
+        ('booking_created', 'New Booking Request'),
+        ('booking_accepted', 'Booking Accepted'),
+        ('booking_declined', 'Booking Declined'),
+        ('booking_cancelled', 'Booking Cancelled'),
+        ('booking_completed', 'Service Completed'),
+        ('review_received', 'New Review Received'),
+        ('subscription_activated', 'Pro Subscription Activated'),
+        ('featured_listing_activated', 'Service Featured'),
+    )
+
+    recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
+    notification_type = models.CharField(max_length=35, choices=NOTIFICATION_TYPES)
+    title = models.CharField(max_length=200)
+    message = models.TextField()
+    booking = models.ForeignKey(Booking, null=True, blank=True, on_delete=models.SET_NULL, related_name='notifications')
+    service = models.ForeignKey(Service, null=True, blank=True, on_delete=models.SET_NULL, related_name='notifications')
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Notification for {self.recipient.username}: {self.title} ({'Read' if self.is_read else 'Unread'})"
+
+
+def create_notification(recipient, notification_type, title, message, booking=None, service=None):
+    """
+    Creates a database-backed notification for a user with duplicate prevention for critical state transitions.
+    """
+    if booking and notification_type in ['booking_created', 'booking_accepted', 'booking_declined', 'booking_cancelled', 'booking_completed']:
+        if Notification.objects.filter(recipient=recipient, booking=booking, notification_type=notification_type).exists():
+            return None
+
+    return Notification.objects.create(
+        recipient=recipient,
+        notification_type=notification_type,
+        title=title,
+        message=message,
+        booking=booking,
+        service=service,
+        is_read=False,
+    )
+
 

@@ -1,15 +1,17 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.urls import reverse
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, HttpResponse
 from django.db.models import Q, Avg, Count, Sum, F, OuterRef, Exists
-from .models import Category, Service, Booking, Review, FeaturedListing, RevenueTransaction
-from .forms import BookingCreateForm, ServiceForm
+from .models import Category, Service, Booking, Review, FeaturedListing, RevenueTransaction, Notification, create_notification
+from .forms import BookingCreateForm, ServiceForm, ReviewForm
 from users.models import UserProfile, ProviderSubscription
 from users.forms import ProviderProfileForm
 from users.decorators import provider_required, admin_required
 from decimal import Decimal
 from datetime import datetime, date, time, timedelta
+import csv
 
 
 def home_view(request):
@@ -160,6 +162,20 @@ def category_services_view(request, name):
     })
 
 
+def get_rating_distribution(reviews_qs):
+    total = reviews_qs.count()
+    distribution = []
+    for star in range(5, 0, -1):
+        c = reviews_qs.filter(rating=star).count()
+        pct = int((c / total) * 100) if total > 0 else 0
+        distribution.append({
+            'star': star,
+            'count': c,
+            'percent': pct,
+        })
+    return distribution
+
+
 def service_detail_view(request, id):
     """
     Rich service detail page with provider summary, reviews, and booking CTA.
@@ -176,10 +192,13 @@ def service_detail_view(request, id):
         is_active=True
     ).exclude(id=service.id)[:3]
 
+    rating_distribution = get_rating_distribution(reviews)
+
     return render(request, 'services/service_detail.html', {
         'service': service,
         'reviews': reviews,
         'other_services': other_services,
+        'rating_distribution': rating_distribution,
     })
 
 
@@ -199,10 +218,13 @@ def service_slug_detail_view(request, slug):
         is_active=True
     ).exclude(id=service.id)[:3]
 
+    rating_distribution = get_rating_distribution(reviews)
+
     return render(request, 'services/service_detail.html', {
         'service': service,
         'reviews': reviews,
         'other_services': other_services,
+        'rating_distribution': rating_distribution,
     })
 
 
@@ -217,7 +239,9 @@ def provider_profile_view(request, id):
         role='provider'
     )
     services = provider.services.filter(is_active=True).select_related('category')
-    reviews = Review.objects.filter(service__provider=provider).select_related('customer', 'service').order_by('-created_at')[:8]
+    all_provider_reviews = Review.objects.filter(service__provider=provider)
+    reviews = all_provider_reviews.select_related('customer', 'service').order_by('-created_at')[:8]
+    rating_distribution = get_rating_distribution(all_provider_reviews)
 
     return render(request, 'services/provider_profile.html', {
         'provider': provider,
@@ -226,6 +250,7 @@ def provider_profile_view(request, id):
         'completed_jobs': provider.completed_jobs_count,
         'average_rating': provider.average_rating,
         'total_reviews': provider.total_reviews_count,
+        'rating_distribution': rating_distribution,
     })
 
 
@@ -290,6 +315,17 @@ def book_service_view(request, service_id):
             )
             # Automatically calculates 10% commission on save
             booking.save()
+
+            # Create notification for service provider
+            create_notification(
+                recipient=service.provider.user,
+                notification_type='booking_created',
+                title='New Booking Request',
+                message=f"{request.user.get_full_name() or request.user.username} requested {service.title} for {booking.booking_date.strftime('%b %d')} at {booking.booking_time.strftime('%I:%M %p')}.",
+                booking=booking,
+                service=service
+            )
+
             messages.success(request, f"Booking request #{booking.id} created successfully!")
             return redirect('booking_success', booking_id=booking.id)
         else:
@@ -397,6 +433,16 @@ def cancel_booking_view(request, booking_id):
 
     booking.status = 'cancelled'
     booking.save()
+
+    create_notification(
+        recipient=booking.service.provider.user,
+        notification_type='booking_cancelled',
+        title='Booking Cancelled',
+        message=f"{request.user.get_full_name() or request.user.username} cancelled the booking for {booking.service.title}.",
+        booking=booking,
+        service=booking.service
+    )
+
     messages.success(request, f"Booking #{booking.id} has been cancelled successfully. The time slot is now open.")
     return redirect('my_bookings')
 
@@ -580,6 +626,16 @@ def provider_job_accept_view(request, booking_id):
 
     booking.status = 'accepted'
     booking.save()
+
+    create_notification(
+        recipient=booking.customer,
+        notification_type='booking_accepted',
+        title='Booking Accepted',
+        message=f"{request.user.get_full_name() or request.user.username} accepted your {booking.service.title} booking.",
+        booking=booking,
+        service=booking.service
+    )
+
     messages.success(request, f"Job #{booking.id} accepted successfully! It is now scheduled in your calendar.")
     return redirect('provider_job_detail', booking_id=booking.id)
 
@@ -603,6 +659,16 @@ def provider_job_decline_view(request, booking_id):
 
     booking.status = 'declined'
     booking.save()
+
+    create_notification(
+        recipient=booking.customer,
+        notification_type='booking_declined',
+        title='Booking Declined',
+        message=f"Unfortunately, {request.user.get_full_name() or request.user.username} declined your booking request for {booking.service.title}.",
+        booking=booking,
+        service=booking.service
+    )
+
     messages.info(request, f"Job #{booking.id} has been declined. The appointment time slot has been freed.")
     return redirect('provider_job_detail', booking_id=booking.id)
 
@@ -638,6 +704,15 @@ def provider_job_complete_view(request, booking_id):
             'description': f"10% Platform Commission on Booking #SVR{booking.id:05d} ({booking.service.title})",
             'status': 'completed',
         }
+    )
+
+    create_notification(
+        recipient=booking.customer,
+        notification_type='booking_completed',
+        title='Service Completed',
+        message=f"Your {booking.service.title} booking has been marked completed. You can now leave a review.",
+        booking=booking,
+        service=booking.service
     )
 
     messages.success(request, f"Job #{booking.id} marked as Completed! ₹{provider_earning} has been added to your earnings ledger.")
@@ -911,6 +986,14 @@ def provider_subscription_view(request):
                 description=f"Pro Plan Monthly Subscription (₹399/mo) for {request.user.get_full_name() or request.user.username}",
                 status='completed'
             )
+
+            create_notification(
+                recipient=request.user,
+                notification_type='subscription_activated',
+                title='Pro Activated',
+                message='Your Servora Pro subscription is now active with verified badge and priority placement.',
+            )
+
             messages.success(request, "Congratulations! You have successfully upgraded to the Pro Plan for ₹399/month. Your verified Pro badge and priority placement are now active.")
             return redirect('provider_subscription')
 
@@ -953,6 +1036,14 @@ def provider_feature_service_view(request, service_id):
             description=f"3-Day Featured Promotion for '{service.title}' (₹99)",
             status='completed'
         )
+
+        create_notification(
+            recipient=request.user,
+            notification_type='featured_listing_activated',
+            title='Service Featured',
+            message=f"Your {service.title} service is now featured for 3 days.",
+            service=service
+        )
         messages.success(request, f"Success! '{service.title}' is now featured on the marketplace for the next 3 days (until {end_date.strftime('%d %b %Y')}).")
         return redirect('provider_services')
 
@@ -966,9 +1057,10 @@ def provider_feature_service_view(request, service_id):
 @admin_required
 def platform_revenue_dashboard_view(request):
     """
-    Executive platform revenue dashboard for administrators.
-    Displays total platform revenue, 4 live KPI cards, 3 revenue stream breakdown cards,
-    weekly visual chart, and top 10 recent transactions.
+    Platform Revenue & SCRGM Pilot Verifiable Tracking Overview.
+    Displays total platform revenue, verifiable pilot revenue, Gross Booking Value,
+    provider earnings, RGM INR 10k-INR 25k target tracker, 4 KPI cards, stream breakdowns,
+    weekly chart, and recent transactions.
     """
     today = date.today()
     week_start = today - timedelta(days=today.weekday())
@@ -976,12 +1068,13 @@ def platform_revenue_dashboard_view(request):
 
     completed_tx = RevenueTransaction.objects.filter(status='completed')
 
+    # Total all-time realized revenue across all records
     total_revenue = completed_tx.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
     today_revenue = completed_tx.filter(created_at__date=today).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
     week_revenue = completed_tx.filter(created_at__date__gte=week_start).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
     month_revenue = completed_tx.filter(created_at__date__gte=month_start).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
 
-    # Stream breakdown
+    # Stream breakdown (All completed)
     commission_revenue = completed_tx.filter(revenue_type='commission').aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
     subscription_revenue = completed_tx.filter(revenue_type='subscription').aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
     featured_revenue = completed_tx.filter(revenue_type='featured').aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
@@ -990,6 +1083,33 @@ def platform_revenue_dashboard_view(request):
     subscription_count = completed_tx.filter(revenue_type='subscription').count()
     featured_count = completed_tx.filter(revenue_type='featured').count()
     total_transactions_count = completed_tx.count()
+
+    # Stage 7.5: Verifiable Pilot Revenue (is_demo=False, status='completed', verification_status='verified')
+    verified_tx = completed_tx.filter(is_demo=False, verification_status='verified')
+    verified_revenue = verified_tx.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+    verified_commission_revenue = verified_tx.filter(revenue_type='commission').aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+    verified_subscription_revenue = verified_tx.filter(revenue_type='subscription').aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+    verified_featured_revenue = verified_tx.filter(revenue_type='featured').aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+    verified_count = verified_tx.count()
+
+    # Demonstration / Seeded data separation
+    demo_tx = completed_tx.filter(is_demo=True)
+    demo_revenue = demo_tx.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+    demo_count = demo_tx.count()
+
+    # Pending verification transactions (Actual pilot but awaiting verification)
+    pending_audit_count = completed_tx.filter(is_demo=False, verification_status='pending').count()
+
+    # Gross Booking Value (GBV) & Provider Earnings separation (from completed bookings)
+    completed_bookings = Booking.objects.filter(status='completed')
+    gross_booking_value = completed_bookings.aggregate(total=Sum('total_amount'))['total'] or Decimal('0.00')
+    total_booking_commissions = completed_bookings.aggregate(total=Sum('commission_amount'))['total'] or Decimal('0.00')
+    provider_earnings_total = gross_booking_value - total_booking_commissions
+
+    # RGM Target Tracker: Target bracket is INR 10,000 - INR 24,999 (target threshold = INR 10,000)
+    target_revenue = Decimal('10000.00')
+    remaining_to_target = max(Decimal('0.00'), target_revenue - verified_revenue)
+    target_progress_percent = min(100, int((verified_revenue / target_revenue) * 100)) if target_revenue > 0 else 0
 
     # Weekly chart: Mon-Sun daily revenue
     day_labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -1026,6 +1146,26 @@ def platform_revenue_dashboard_view(request):
         'subscription_count': subscription_count,
         'featured_count': featured_count,
         'total_transactions_count': total_transactions_count,
+
+        # Stage 7.5 Verifiable Metrics
+        'verified_revenue': verified_revenue,
+        'verified_commission_revenue': verified_commission_revenue,
+        'verified_subscription_revenue': verified_subscription_revenue,
+        'verified_featured_revenue': verified_featured_revenue,
+        'verified_count': verified_count,
+        'demo_revenue': demo_revenue,
+        'demo_count': demo_count,
+        'pending_audit_count': pending_audit_count,
+
+        # Gross Booking Value vs Provider Earnings
+        'gross_booking_value': gross_booking_value,
+        'provider_earnings_total': provider_earnings_total,
+
+        # RGM Target Tracker
+        'target_revenue': target_revenue,
+        'remaining_to_target': remaining_to_target,
+        'target_progress_percent': target_progress_percent,
+
         'weekly_chart': weekly_chart,
         'recent_transactions': recent_transactions,
         'active_tab': 'overview',
@@ -1075,6 +1215,241 @@ def platform_revenue_transactions_view(request):
     })
 
 
+@admin_required
+def platform_revenue_evidence_view(request):
+    """
+    RGM Audit & Revenue Evidence Summary.
+    Enables administrative auditing, filtering by demo/actual status and verification,
+    and supports print layout and CSV export for university SCRGM submission.
+    """
+    data_filter = request.GET.get('data', 'actual').lower()  # 'actual' (is_demo=False), 'demo', 'all'
+    verif_filter = request.GET.get('verification', 'all').lower()
+    type_filter = request.GET.get('type', 'all').lower()
+
+    queryset = RevenueTransaction.objects.all().select_related(
+        'provider', 'provider__user', 'booking', 'service', 'booking__customer'
+    ).order_by('-created_at')
+
+    if data_filter == 'actual':
+        queryset = queryset.filter(is_demo=False)
+    elif data_filter == 'demo':
+        queryset = queryset.filter(is_demo=True)
+    else:
+        data_filter = 'all'
+
+    if verif_filter in ['verified', 'pending', 'rejected']:
+        queryset = queryset.filter(verification_status=verif_filter)
+    else:
+        verif_filter = 'all'
+
+    if type_filter in ['commission', 'subscription', 'featured']:
+        queryset = queryset.filter(revenue_type=type_filter)
+    else:
+        type_filter = 'all'
+
+    # CSV Export
+    if request.GET.get('export') == 'csv':
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="servora_rgm_evidence_audit.csv"'
+        writer = csv.writer(response)
+        writer.writerow([
+            'Transaction ID',
+            'Date',
+            'Revenue Source',
+            'Servora Revenue (INR)',
+            'Status',
+            'Verification Status',
+            'Transaction Reference / UTR',
+            'Payment Method',
+            'Evidence Available',
+            'Provider Username',
+            'Provider Name',
+            'Booking/Service Ref',
+            'Evidence Notes',
+            'Data Type',
+        ])
+        for tx in queryset:
+            writer.writerow([
+                f"TXN#{tx.id:05d}",
+                tx.created_at.strftime('%Y-%m-%d %H:%M'),
+                tx.get_revenue_type_display(),
+                f"{tx.amount:.2f}",
+                tx.get_status_display(),
+                tx.get_verification_status_display(),
+                tx.transaction_reference or 'N/A',
+                tx.get_payment_method_display() if tx.payment_method else 'N/A',
+                'Yes' if tx.has_evidence else 'No',
+                tx.provider.user.username,
+                tx.provider.user.get_full_name() or tx.provider.user.username,
+                f"Booking #SVR{tx.booking.id:05d}" if tx.booking else (tx.service.title if tx.service else 'N/A'),
+                tx.evidence_note or '',
+                'Demonstration (Synthetic)' if tx.is_demo else 'Actual Pilot Record',
+            ])
+        return response
+
+    total_amount = queryset.filter(status='completed').aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+    verified_sum = queryset.filter(status='completed', is_demo=False, verification_status='verified').aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+
+    return render(request, 'platform/evidence.html', {
+        'transactions': queryset,
+        'total_amount': total_amount,
+        'verified_sum': verified_sum,
+        'data_filter': data_filter,
+        'verif_filter': verif_filter,
+        'type_filter': type_filter,
+        'total_count': queryset.count(),
+        'active_tab': 'evidence',
+    })
+
+
+@login_required
+def commercial_receipt_view(request, booking_id):
+    """
+    Renders a clean, official SERVORA COMMERCIAL SERVICE RECEIPT.
+    Available for completed bookings.
+    Strictly free from fake GSTIN, fake tax registrations, or false government claims.
+    Accessible by booking customer, service provider, or platform staff.
+    """
+    booking = get_object_or_404(
+        Booking.objects.select_related('service', 'service__provider', 'service__provider__user', 'customer'),
+        id=booking_id
+    )
+
+    # Security check: only customer, provider, or staff can view
+    is_cust = (request.user == booking.customer)
+    is_prov = (hasattr(request.user, 'profile') and request.user.profile == booking.service.provider)
+    if not (is_cust or is_prov or request.user.is_staff):
+        messages.error(request, "You are not authorized to view this receipt.")
+        return redirect('my_bookings')
+
+    if booking.status != 'completed':
+        messages.warning(request, "Commercial receipts are generated only for completed service bookings.")
+        return redirect('booking_detail', booking_id=booking.id)
+
+    provider_earning = booking.total_amount - booking.commission_amount
+    review = getattr(booking, 'review', None)
+
+    return render(request, 'services/receipt.html', {
+        'booking': booking,
+        'service': booking.service,
+        'customer': booking.customer,
+        'provider': booking.service.provider,
+        'provider_earning': provider_earning,
+        'review': review,
+    })
+
+
+@login_required
+def leave_review_view(request, booking_id):
+    """
+    Customer review and rating submission view for a completed booking.
+    Strictly verifies customer ownership and booking completion.
+    """
+    # 1. Reject provider accounts attempting customer reviews
+    if hasattr(request.user, 'profile') and request.user.profile.is_provider:
+        messages.error(request, "Service provider accounts cannot submit customer reviews.")
+        return redirect('home')
+
+    booking = get_object_or_404(
+        Booking.objects.select_related('service', 'service__provider', 'service__provider__user', 'service__category'),
+        id=booking_id,
+        customer=request.user
+    )
+
+    if booking.status != 'completed':
+        messages.error(request, "Reviews can only be submitted for completed bookings.")
+        return redirect('booking_detail', booking_id=booking.id)
+
+    # 2. Prevent duplicate reviews for the same booking
+    if hasattr(booking, 'review') and booking.review is not None:
+        messages.info(request, "You have already reviewed this service booking. Thank you for your feedback!")
+        return redirect('booking_detail', booking_id=booking.id)
+
+    if request.method == 'POST':
+        form = ReviewForm(request.POST)
+        if form.is_valid():
+            review = form.save(commit=False)
+            review.booking = booking
+            review.customer = request.user
+            review.service = booking.service
+            review.save()
+
+            # Notify the service provider about the new review
+            create_notification(
+                recipient=booking.service.provider.user,
+                notification_type='review_received',
+                title='New Review Received',
+                message=f"{request.user.get_full_name() or request.user.username} gave your {booking.service.title} service {review.rating} stars: \"{review.comment[:60]}...\"",
+                booking=booking,
+                service=booking.service
+            )
+
+            messages.success(request, f"Thank you for reviewing {booking.service.title}! Your rating helps our local community.")
+            return redirect('booking_detail', booking_id=booking.id)
+        else:
+            for field, errors in form.errors.items():
+                for error in errors:
+                    messages.error(request, error)
+    else:
+        form = ReviewForm()
+
+    return render(request, 'services/leave_review.html', {
+        'booking': booking,
+        'service': booking.service,
+        'form': form,
+    })
+
+
+@login_required
+def notifications_list_view(request):
+    """
+    Reverse-chronological notification center for customer and provider alerts.
+    """
+    notifications = Notification.objects.filter(
+        recipient=request.user
+    ).select_related('booking', 'service').order_by('-created_at')
+
+    unread_count = notifications.filter(is_read=False).count()
+
+    return render(request, 'notifications/list.html', {
+        'notifications': notifications,
+        'unread_count': unread_count,
+        'active_tab': 'notifications',
+    })
+
+
+@login_required
+def notification_mark_read_view(request, id):
+    """
+    Marks a single notification as read and redirects to relevant target or notifications list.
+    """
+    notif = get_object_or_404(Notification, id=id, recipient=request.user)
+    notif.is_read = True
+    notif.save(update_fields=['is_read'])
+
+    next_url = request.GET.get('next')
+    if next_url:
+        return redirect(next_url)
+
+    if notif.booking:
+        if hasattr(request.user, 'profile') and request.user.profile.is_provider:
+            return redirect('provider_job_detail', booking_id=notif.booking.id)
+        return redirect('booking_detail', booking_id=notif.booking.id)
+    elif notif.service:
+        return redirect('service_detail', id=notif.service.id)
+
+    return redirect('notifications_list')
+
+
+@login_required
+def notification_mark_all_read_view(request):
+    """
+    POST action: Marks all unread notifications for the logged-in user as read.
+    """
+    if request.method == 'POST':
+        Notification.objects.filter(recipient=request.user, is_read=False).update(is_read=True)
+        messages.success(request, "All notifications marked as read.")
+    return redirect('notifications_list')
 
 
 def api_services_list(request):

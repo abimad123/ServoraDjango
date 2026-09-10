@@ -1,0 +1,195 @@
+{% extends "platform/base_platform.html" %}
+
+{% block title %}RGM Revenue Pilot Audit & Evidence – Servora Admin{% endblock %}
+
+{% block platform_content %}
+<div class="provider-topbar" style="margin-bottom: 1.5rem;">
+  <div class="provider-greeting">
+    <h1>RGM Revenue Pilot & Audit Evidence Summary</h1>
+    <p>Official student-centric revenue audit ledger for SCRGM Self-Employed verification.</p>
+  </div>
+  <div class="provider-topbar-actions" style="display: flex; gap: 0.75rem;">
+    <button onclick="window.print()" class="btn btn-outline btn-sm">
+      🖨️ Print Audit Summary
+    </button>
+    <a href="?data={{ data_filter }}&verification={{ verif_filter }}&type={{ type_filter }}&export=csv" class="btn btn-primary btn-sm" style="background: #10B981; border-color: #10B981;">
+      📥 Export CSV for Committee
+    </a>
+  </div>
+</div>
+
+<!-- SCRGM Regulatory Compliance Callout -->
+<div style="background: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 12px; padding: 1.25rem; margin-bottom: 1.5rem; font-size: 0.88rem; color: #1E40AF;">
+  <div style="font-weight: 800; font-size: 0.95rem; margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.5rem;">
+    <span>⚖️ University SCRGM Verification Standards</span>
+  </div>
+  <p style="margin: 0 0 0.5rem; line-height: 1.5;">
+    All revenue documented below for academic credit must correspond to a genuine commercial transaction with verified non-cash digital payment (UPI / Bank transfer) and actual service delivery. Cash payments are <strong>strictly prohibited</strong> under university self-employed regulations.
+  </p>
+  <div style="display: flex; gap: 1.5rem; font-weight: 700; font-size: 0.85rem; color: #1E3A8A;">
+    <span>Verified Revenue Filtered: ₹{{ verified_sum|floatformat:2 }}</span>
+    <span>Total In View: ₹{{ total_amount|floatformat:2 }} ({{ total_count }} Transactions)</span>
+  </div>
+</div>
+
+<!-- Filter Controls -->
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 1.25rem; margin-bottom: 1.5rem;">
+  <form method="GET" style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end;">
+    <div>
+      <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #64748B; margin-bottom: 0.35rem; text-transform: uppercase;">
+        Data Category
+      </label>
+      <select name="data" class="form-control" style="padding: 6px 12px; font-size: 0.85rem; border-radius: 8px; border: 1px solid #CBD5E1;">
+        <option value="actual" {% if data_filter == 'actual' %}selected{% endif %}>Actual Pilot Transactions (Non-Demo)</option>
+        <option value="all" {% if data_filter == 'all' %}selected{% endif %}>All Records (Actual + Demo)</option>
+        <option value="demo" {% if data_filter == 'demo' %}selected{% endif %}>Demo / Seed Data Only</option>
+      </select>
+    </div>
+
+    <div>
+      <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #64748B; margin-bottom: 0.35rem; text-transform: uppercase;">
+        Verification Status
+      </label>
+      <select name="verification" class="form-control" style="padding: 6px 12px; font-size: 0.85rem; border-radius: 8px; border: 1px solid #CBD5E1;">
+        <option value="all" {% if verif_filter == 'all' %}selected{% endif %}>All Statuses</option>
+        <option value="verified" {% if verif_filter == 'verified' %}selected{% endif %}>Verified (Audited with Evidence)</option>
+        <option value="pending" {% if verif_filter == 'pending' %}selected{% endif %}>Pending Verification</option>
+        <option value="rejected" {% if verif_filter == 'rejected' %}selected{% endif %}>Rejected</option>
+      </select>
+    </div>
+
+    <div>
+      <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #64748B; margin-bottom: 0.35rem; text-transform: uppercase;">
+        Revenue Stream
+      </label>
+      <select name="type" class="form-control" style="padding: 6px 12px; font-size: 0.85rem; border-radius: 8px; border: 1px solid #CBD5E1;">
+        <option value="all" {% if type_filter == 'all' %}selected{% endif %}>All Streams</option>
+        <option value="commission" {% if type_filter == 'commission' %}selected{% endif %}>Booking Commissions (10%)</option>
+        <option value="subscription" {% if type_filter == 'subscription' %}selected{% endif %}>Pro Subscriptions (₹399)</option>
+        <option value="featured" {% if type_filter == 'featured' %}selected{% endif %}>Featured Listings (₹99)</option>
+      </select>
+    </div>
+
+    <div>
+      <button type="submit" class="btn btn-outline btn-sm" style="padding: 7px 16px;">
+        Apply Filter
+      </button>
+      <a href="{% url 'platform_revenue_evidence' %}" class="btn btn-sm" style="color: #64748B; text-decoration: underline; margin-left: 0.5rem;">
+        Reset
+      </a>
+    </div>
+  </form>
+</div>
+
+<!-- Evidence Table -->
+<div class="dashboard-card" style="padding: 0; overflow: hidden; border: 1px solid #E2E8F0; border-radius: 12px;">
+  {% if transactions %}
+    <div class="provider-table-wrapper" style="border: none;">
+      <table class="provider-table">
+        <thead>
+          <tr style="background: #F8FAFC;">
+            <th>Txn ID / Date</th>
+            <th>Source</th>
+            <th>Provider / Context</th>
+            <th>Revenue</th>
+            <th>Verification</th>
+            <th>Audit Proof (UTR / Method)</th>
+            <th>Evidence Note</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for tx in transactions %}
+            <tr style="{% if tx.is_demo %}opacity: 0.85; background: #FAFAFA;{% endif %}">
+              <td>
+                <div style="font-weight: 700; color: #0F172A;">TXN#{{ tx.id|stringformat:"05d" }}</div>
+                <div style="font-size: 0.75rem; color: #64748B;">{{ tx.created_at|date:"d M Y, H:i" }}</div>
+                {% if tx.is_demo %}
+                  <span style="display: inline-block; margin-top: 3px; font-size: 0.68rem; font-weight: 800; background: #F1F5F9; color: #64748B; padding: 1px 6px; border-radius: 4px;">
+                    DEMO DATA
+                  </span>
+                {% else %}
+                  <span style="display: inline-block; margin-top: 3px; font-size: 0.68rem; font-weight: 800; background: #ECFDF5; color: #059669; padding: 1px 6px; border-radius: 4px;">
+                    ACTUAL PILOT
+                  </span>
+                {% endif %}
+              </td>
+              <td>
+                {% if tx.revenue_type == 'commission' %}
+                  <span class="badge-status-completed" style="font-size: 0.75rem;">Commission (10%)</span>
+                {% elif tx.revenue_type == 'subscription' %}
+                  <span class="badge-status-accepted" style="font-size: 0.75rem;">Pro Subscription</span>
+                {% elif tx.revenue_type == 'featured' %}
+                  <span class="badge-status-pending" style="font-size: 0.75rem;">Featured Listing</span>
+                {% endif %}
+              </td>
+              <td>
+                <div style="font-weight: 700; color: #1E293B;">{{ tx.provider.user.get_full_name|default:tx.provider.user.username }}</div>
+                <div style="font-size: 0.78rem; color: #64748B;">
+                  {% if tx.booking %}
+                    Booking #SVR{{ tx.booking.id|stringformat:"05d" }}
+                    {% if tx.booking.status == 'completed' %}
+                      • <a href="{% url 'booking_receipt' tx.booking.id %}" target="_blank" style="color: #0D6EFD;">Receipt &rarr;</a>
+                    {% endif %}
+                  {% elif tx.service %}
+                    {{ tx.service.title|truncatechars:28 }}
+                  {% else %}
+                    Pro Membership
+                  {% endif %}
+                </div>
+              </td>
+              <td>
+                <div style="font-size: 1.1rem; font-weight: 800; color: #10B981;">
+                  ₹{{ tx.amount|floatformat:2 }}
+                </div>
+                <div style="font-size: 0.72rem; color: #64748B;">
+                  {{ tx.get_status_display }}
+                </div>
+              </td>
+              <td>
+                {% if tx.verification_status == 'verified' %}
+                  <span style="background: #DEF7EC; color: #03543F; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; display: inline-flex; align-items: center; gap: 3px;">
+                    ✓ Verified
+                  </span>
+                {% elif tx.verification_status == 'pending' %}
+                  <span style="background: #FEF08A; color: #854D0E; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 6px;">
+                    ⏳ Pending Audit
+                  </span>
+                {% else %}
+                  <span style="background: #FEE2E2; color: #991B1B; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 6px;">
+                    ✕ Rejected
+                  </span>
+                {% endif %}
+              </td>
+              <td>
+                <div style="font-weight: 600; font-size: 0.82rem; color: #334155;">
+                  {{ tx.transaction_reference|default:"Not Recorded" }}
+                </div>
+                <div style="font-size: 0.75rem; color: #64748B;">
+                  {{ tx.get_payment_method_display|default:"Digital Payment" }}
+                  {% if tx.has_evidence %}
+                    • <strong style="color: #059669;">Evidence Confirmed</strong>
+                  {% endif %}
+                </div>
+              </td>
+              <td>
+                <div style="font-size: 0.8rem; color: #475569; max-width: 240px; line-height: 1.4;">
+                  {{ tx.evidence_note|default:"—" }}
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div style="text-align: center; padding: 3rem 1.5rem; color: #94A3B8;">
+      <p style="font-size: 1rem; font-weight: 600; margin: 0;">No transactions match the selected filter criteria.</p>
+    </div>
+  {% endif %}
+</div>
+
+<!-- Print-Only Compliance Disclaimer -->
+<div style="margin-top: 2rem; padding: 1rem; border-top: 1px solid #E2E8F0; font-size: 0.75rem; color: #64748B; line-height: 1.5;">
+  <strong>Certification of Academic Record:</strong> This report is generated by the Servora marketplace platform administrator interface for evaluation under the University Student-Centric Revenue Generation Model (SCRGM). Database entries represent administrative log events and must be corroborated by external bank statements and verified customer receipts.
+</div>
+{% endblock %}
