@@ -1,0 +1,172 @@
+{% extends "provider/base_provider.html" %}
+
+{% block title %}Earnings & Payouts – Servora Workspace{% endblock %}
+
+{% block provider_content %}
+<div class="provider-topbar">
+  <div class="provider-greeting">
+    <h1>Earnings & Financial Ledger</h1>
+    <p>Track your take-home payouts from completed services after the 10% platform commission.</p>
+  </div>
+</div>
+
+<!-- 4 Statistics Cards -->
+<div class="provider-stats-grid">
+  <!-- Total Lifetime Earnings -->
+  <div class="provider-stat-card">
+    <div class="stat-card-header">
+      <span class="stat-card-title">Total Lifetime Earnings</span>
+      <div class="stat-icon-wrapper stat-icon-green">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+      </div>
+    </div>
+    <div class="stat-card-value">₹{{ total_earnings|floatformat:0 }}</div>
+    <div class="stat-card-footer">
+      <span class="stat-trend-positive">Completed jobs</span> only
+    </div>
+  </div>
+
+  <!-- This Month -->
+  <div class="provider-stat-card">
+    <div class="stat-card-header">
+      <span class="stat-card-title">This Month</span>
+      <div class="stat-icon-wrapper stat-icon-coral">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+      </div>
+    </div>
+    <div class="stat-card-value">₹{{ month_earnings|floatformat:0 }}</div>
+    <div class="stat-card-footer">
+      <span>Current calendar month</span>
+    </div>
+  </div>
+
+  <!-- This Week -->
+  <div class="provider-stat-card">
+    <div class="stat-card-header">
+      <span class="stat-card-title">This Week</span>
+      <div class="stat-icon-wrapper stat-icon-blue">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line></svg>
+      </div>
+    </div>
+    <div class="stat-card-value">₹{{ week_earnings|floatformat:0 }}</div>
+    <div class="stat-card-footer">
+      <span>Monday to Sunday cycle</span>
+    </div>
+  </div>
+
+  <!-- Completed Jobs Count -->
+  <div class="provider-stat-card">
+    <div class="stat-card-header">
+      <span class="stat-card-title">Completed Jobs</span>
+      <div class="stat-icon-wrapper stat-icon-purple">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+      </div>
+    </div>
+    <div class="stat-card-value">{{ completed_jobs_count }}</div>
+    <div class="stat-card-footer">
+      <span>Paid & delivered tasks</span>
+    </div>
+  </div>
+</div>
+
+<!-- Weekly Visual Chart Card -->
+<div class="chart-container-card">
+  <div class="chart-header">
+    <div>
+      <h3 style="font-size: 1.15rem; font-weight: 800; color: #1E293B; margin-bottom: 0.25rem;">
+        Weekly Earnings Distribution
+      </h3>
+      <p style="font-size: 0.85rem; color: #64748B; margin: 0;">
+        Daily take-home payouts for the current week. Hover over bars to inspect daily amounts.
+      </p>
+    </div>
+    <span style="font-size: 0.8rem; font-weight: 700; color: #0D6EFD; background: #F0F4FD; padding: 4px 10px; border-radius: 9999px;">
+      7-Day Overview
+    </span>
+  </div>
+
+  <div class="weekly-bars-wrapper">
+    {% for bar in weekly_bars %}
+      <div class="chart-col {% if bar.is_today %}is-today{% endif %}">
+        <div class="chart-bar {% if bar.earning > 0 %}has-earnings{% endif %}" style="height: {{ bar.height_percent }}%;">
+          <div class="chart-bar-tooltip">
+            ₹{{ bar.earning|floatformat:0 }}
+          </div>
+        </div>
+        <span class="chart-day-label">
+          {{ bar.day_name }}{% if bar.is_today %} •{% endif %}
+        </span>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Completed Bookings History Ledger -->
+<div class="dashboard-card" style="margin-top: 2rem;">
+  <div class="dashboard-card-header">
+    <div class="dashboard-card-title">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
+      <span>Completed Earnings History</span>
+    </div>
+    <span style="font-size: 0.85rem; font-weight: 700; color: #64748B;">
+      {{ completed_jobs_count }} Record{{ completed_jobs_count|pluralize }}
+    </span>
+  </div>
+
+  {% if completed_bookings %}
+    <div class="provider-table-wrapper" style="border: none;">
+      <table class="provider-table">
+        <thead>
+          <tr>
+            <th>Date Completed</th>
+            <th>Service</th>
+            <th>Customer</th>
+            <th>Gross Amount</th>
+            <th>Platform Fee (10%)</th>
+            <th>Your Net Earning</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for b in completed_bookings %}
+            <tr>
+              <td>
+                <div style="font-weight: 600;">{{ b.booking_date|date:"d M Y" }}</div>
+                <div style="font-size: 0.78rem; color: #64748B;">{{ b.booking_time|time:"g:i A" }}</div>
+              </td>
+              <td>
+                <div style="font-weight: 700; color: #1E293B;">{{ b.service.title }}</div>
+                <div style="font-size: 0.78rem; color: #64748B;">#SVR{{ b.id|stringformat:"05d" }}</div>
+              </td>
+              <td>
+                <div style="font-weight: 600;">{{ b.customer.get_full_name|default:b.customer.username }}</div>
+              </td>
+              <td>
+                <span style="font-weight: 700; color: #64748B;">₹{{ b.total_amount|floatformat:2 }}</span>
+              </td>
+              <td>
+                <span style="color: #DC2626; font-weight: 600;">- ₹{{ b.commission_amount|floatformat:2 }}</span>
+              </td>
+              <td>
+                <span style="font-size: 1.05rem; font-weight: 800; color: #10B981;">
+                  ₹{{ b.provider_earning|floatformat:2 }}
+                </span>
+                <div style="font-size: 0.75rem; color: #10B981; font-weight: 700;">Net Deposited</div>
+              </td>
+              <td>
+                <span class="badge-status-completed">Completed</span>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div style="text-align: center; padding: 3rem 1.5rem; color: #94A3B8;">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 0.75rem;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <p style="font-size: 0.95rem; font-weight: 600; margin: 0;">No completed earnings yet</p>
+      <p style="font-size: 0.85rem; margin-top: 0.25rem;">Once you mark accepted bookings as completed, your payouts will be logged here.</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

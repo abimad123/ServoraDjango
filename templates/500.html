@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Server Error (500) – Servora{% endblock %}
+
+{% block content %}
+<section class="section" style="min-height: 60vh; display: flex; align-items: center;">
+  <div class="container" style="text-align: center; max-width: 620px;">
+    <div style="font-size: 5rem; font-weight: 800; color: #DC2626; line-height: 1; margin-bottom: 16px;">
+      500
+    </div>
+    <h1 style="font-size: 2rem; margin-bottom: 16px;">Internal Server Error</h1>
+    <p class="text-lead" style="margin-bottom: 32px;">
+      Something unexpected occurred on our end. Our technical team has been notified and is looking into the issue.
+    </p>
+
+    <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+      <a href="{% url 'home' %}" class="btn btn-primary">Back to Homepage</a>
+      <a href="{% url 'service_list' %}" class="btn btn-outline">Browse Services</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

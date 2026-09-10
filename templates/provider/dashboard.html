@@ -1,0 +1,186 @@
+{% extends "provider/base_provider.html" %}
+
+{% block title %}Provider Overview – Servora Workspace{% endblock %}
+
+{% block provider_content %}
+<!-- Topbar Header -->
+<div class="provider-topbar">
+  <div class="provider-greeting">
+    <h1>Good morning, {{ user.first_name|default:user.username }} 👋</h1>
+    <p>Here's what's happening with your services today.</p>
+  </div>
+  <div class="provider-topbar-actions">
+    <a href="{% url 'provider_service_add' %}" class="btn btn-primary btn-sm">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+      <span>+ Add New Service</span>
+    </a>
+  </div>
+</div>
+
+<!-- 4 Statistics Metric Cards -->
+<div class="provider-stats-grid">
+  <!-- Today's Earnings -->
+  <div class="provider-stat-card">
+    <div class="stat-card-header">
+      <span class="stat-card-title">Today's Earnings</span>
+      <div class="stat-icon-wrapper stat-icon-coral">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+      </div>
+    </div>
+    <div class="stat-card-value">₹{{ today_earnings|floatformat:0 }}</div>
+    <div class="stat-card-footer">
+      <span class="stat-trend-positive">Net Take-Home</span> (10% fee deducted)
+    </div>
+  </div>
+
+  <!-- This Week -->
+  <div class="provider-stat-card">
+    <div class="stat-card-header">
+      <span class="stat-card-title">This Week</span>
+      <div class="stat-icon-wrapper stat-icon-blue">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+      </div>
+    </div>
+    <div class="stat-card-value">₹{{ week_earnings|floatformat:0 }}</div>
+    <div class="stat-card-footer">
+      <span>Current 7-day cycle</span>
+    </div>
+  </div>
+
+  <!-- This Month -->
+  <div class="provider-stat-card">
+    <div class="stat-card-header">
+      <span class="stat-card-title">This Month</span>
+      <div class="stat-icon-wrapper stat-icon-purple">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+      </div>
+    </div>
+    <div class="stat-card-value">₹{{ month_earnings|floatformat:0 }}</div>
+    <div class="stat-card-footer">
+      <span>Monthly net revenue</span>
+    </div>
+  </div>
+
+  <!-- Completed Jobs -->
+  <div class="provider-stat-card">
+    <div class="stat-card-header">
+      <span class="stat-card-title">Completed Jobs</span>
+      <div class="stat-icon-wrapper stat-icon-green">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+      </div>
+    </div>
+    <div class="stat-card-value">{{ completed_jobs_count }}</div>
+    <div class="stat-card-footer">
+      <span>Successfully served clients</span>
+    </div>
+  </div>
+</div>
+
+<!-- Two-Column Workspace Sections -->
+<div class="dashboard-sections-grid">
+
+  <!-- Left: Pending Job Requests -->
+  <div class="dashboard-card">
+    <div class="dashboard-card-header">
+      <div class="dashboard-card-title">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FF5A36" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+        <span>Pending Job Requests</span>
+      </div>
+      <a href="{% url 'provider_jobs' %}?status=pending" class="view-all-link">View All &rarr;</a>
+    </div>
+
+    {% if pending_requests %}
+      <div class="job-requests-list">
+        {% for req in pending_requests %}
+          <div class="job-request-mini-card">
+            <div class="job-request-top">
+              <span class="job-service-name">{{ req.service.title }}</span>
+              <span class="badge-status-pending">Pending</span>
+            </div>
+
+            <div class="job-meta-row">
+              <span class="job-meta-item">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                <span>{{ req.customer.get_full_name|default:req.customer.username }}</span>
+              </span>
+              <span class="job-meta-item">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line></svg>
+                <span>{{ req.booking_date|date:"d M Y" }} at {{ req.booking_time|time:"g:i A" }}</span>
+              </span>
+              <span class="job-meta-item job-price-earning">
+                Budget: ₹{{ req.total_amount|floatformat:0 }}
+              </span>
+            </div>
+
+            {% if req.address %}
+              <div style="font-size: 0.8rem; color: #64748B;">
+                📍 {{ req.address|truncatechars:65 }}
+              </div>
+            {% endif %}
+
+            <div class="job-actions-row">
+              <form action="{% url 'provider_job_accept' req.id %}" method="POST" style="margin: 0;">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-primary btn-sm" style="padding: 0.4rem 0.9rem; font-size: 0.82rem;">Accept</button>
+              </form>
+              <form action="{% url 'provider_job_decline' req.id %}" method="POST" style="margin: 0;">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline btn-sm" style="padding: 0.4rem 0.9rem; font-size: 0.82rem; color: #DC2626; border-color: #FCA5A5;">Decline</button>
+              </form>
+              <a href="{% url 'provider_job_detail' req.id %}" class="btn btn-ghost btn-sm" style="padding: 0.4rem 0.75rem; font-size: 0.82rem; margin-left: auto;">Details</a>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div style="text-align: center; padding: 2.5rem 1rem; color: #94A3B8;">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 0.75rem;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <p style="font-size: 0.92rem; font-weight: 600; margin: 0;">No pending requests at the moment</p>
+        <p style="font-size: 0.82rem; margin-top: 0.25rem;">New customer bookings will appear here instantly.</p>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Right: Upcoming Schedule -->
+  <div class="dashboard-card">
+    <div class="dashboard-card-header">
+      <div class="dashboard-card-title">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0D6EFD" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+        <span>Upcoming Jobs</span>
+      </div>
+      <a href="{% url 'provider_schedule' %}" class="view-all-link">Full Schedule &rarr;</a>
+    </div>
+
+    {% if upcoming_jobs %}
+      <div class="job-requests-list">
+        {% for job in upcoming_jobs %}
+          <div class="job-request-mini-card" style="border-left: 3px solid #0D6EFD;">
+            <div class="job-request-top">
+              <span class="job-service-name">{{ job.service.title }}</span>
+              <span class="badge-status-accepted">Accepted</span>
+            </div>
+            <div class="job-meta-row">
+              <span class="job-meta-item">
+                📅 {{ job.booking_date|date:"D, d M" }} • ⏰ {{ job.booking_time|time:"g:i A" }}
+              </span>
+            </div>
+            <div style="font-size: 0.82rem; color: #64748B;">
+              👤 Client: <strong>{{ job.customer.get_full_name|default:job.customer.username }}</strong>
+            </div>
+            <div style="margin-top: 0.25rem;">
+              <a href="{% url 'provider_job_detail' job.id %}" class="btn btn-outline btn-sm" style="padding: 0.35rem 0.8rem; font-size: 0.8rem; width: 100%; text-align: center;">View Job Details</a>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div style="text-align: center; padding: 2.5rem 1rem; color: #94A3B8;">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 0.75rem;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+        <p style="font-size: 0.92rem; font-weight: 600; margin: 0;">No upcoming jobs scheduled</p>
+        <p style="font-size: 0.82rem; margin-top: 0.25rem;">Accept pending requests to schedule new jobs.</p>
+      </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

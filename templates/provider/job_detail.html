@@ -1,0 +1,190 @@
+{% extends "provider/base_provider.html" %}
+
+{% block title %}Job #SVR{{ booking.id|stringformat:"05d" }} – Servora Workspace{% endblock %}
+
+{% block provider_content %}
+<!-- Topbar with Back Button -->
+<div class="provider-topbar">
+  <div>
+    <a href="{% url 'provider_jobs' %}" style="font-size: 0.85rem; font-weight: 700; color: #0D6EFD; text-decoration: none; display: inline-flex; align-items: center; gap: 0.35rem; margin-bottom: 0.5rem;">
+      &larr; Back to All Jobs
+    </a>
+    <div class="provider-greeting">
+      <h1>Job Details #SVR{{ booking.id|stringformat:"05d" }}</h1>
+      <p>Submitted on {{ booking.created_at|date:"d M Y, g:i A" }}</p>
+    </div>
+  </div>
+
+  <div class="provider-topbar-actions">
+    {% if booking.status == 'pending' %}
+      <span class="badge-status-pending" style="font-size: 0.9rem; padding: 6px 14px;">Status: Pending Approval</span>
+    {% elif booking.status == 'accepted' %}
+      <span class="badge-status-accepted" style="font-size: 0.9rem; padding: 6px 14px;">Status: In Progress</span>
+    {% elif booking.status == 'completed' %}
+      <span class="badge-status-completed" style="font-size: 0.9rem; padding: 6px 14px;">Status: Completed</span>
+    {% elif booking.status == 'declined' %}
+      <span class="badge-status-declined" style="font-size: 0.9rem; padding: 6px 14px;">Status: Declined</span>
+    {% elif booking.status == 'cancelled' %}
+      <span class="badge-status-cancelled" style="font-size: 0.9rem; padding: 6px 14px;">Status: Cancelled</span>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Two-Column Grid -->
+<div class="job-detail-grid">
+
+  <!-- Left: Service and Client Details -->
+  <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+
+    <!-- Service Card -->
+    <div class="job-detail-card">
+      <h3 style="font-size: 1.1rem; font-weight: 800; color: #1E293B; margin-bottom: 1rem; border-bottom: 1px solid #E2E8F0; padding-bottom: 0.75rem;">
+        Service Requested
+      </h3>
+      <div style="font-size: 1.25rem; font-weight: 800; color: #1E293B; margin-bottom: 0.35rem;">
+        {{ booking.service.title }}
+      </div>
+      <div style="display: inline-block; background: #F0F4FD; color: #0D6EFD; font-size: 0.8rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; margin-bottom: 0.85rem;">
+        {{ booking.service.category.name }}
+      </div>
+      <p style="font-size: 0.92rem; color: #475569; line-height: 1.6; margin-bottom: 1rem;">
+        {{ booking.service.description }}
+      </p>
+      <div style="display: flex; gap: 1.5rem; font-size: 0.85rem; color: #64748B;">
+        <span>⏱️ Estimated Duration: <strong>{{ booking.service.duration_estimate }}</strong></span>
+        <span>📍 Service Area: <strong>{{ booking.service.location }}</strong></span>
+      </div>
+    </div>
+
+    <!-- Customer & Location Card -->
+    <div class="job-detail-card">
+      <h3 style="font-size: 1.1rem; font-weight: 800; color: #1E293B; margin-bottom: 1rem; border-bottom: 1px solid #E2E8F0; padding-bottom: 0.75rem;">
+        Customer Information
+      </h3>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 1.25rem;">
+        <div>
+          <div style="font-size: 0.78rem; font-weight: 700; color: #64748B; text-transform: uppercase;">Client Name</div>
+          <div style="font-size: 1rem; font-weight: 700; color: #1E293B; margin-top: 0.25rem;">
+            {{ booking.customer.get_full_name|default:booking.customer.username }}
+          </div>
+        </div>
+        <div>
+          <div style="font-size: 0.78rem; font-weight: 700; color: #64748B; text-transform: uppercase;">Contact Phone</div>
+          <div style="font-size: 1rem; font-weight: 700; color: #1E293B; margin-top: 0.25rem;">
+            {% if booking.customer.profile.phone %}
+              <a href="tel:{{ booking.customer.profile.phone }}" style="color: #0D6EFD; text-decoration: none;">📞 {{ booking.customer.profile.phone }}</a>
+            {% else %}
+              <span style="color: #94A3B8;">Not specified</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 1.25rem;">
+        <div style="font-size: 0.78rem; font-weight: 700; color: #64748B; text-transform: uppercase;">Service Location Address</div>
+        <div style="font-size: 0.95rem; color: #1E293B; margin-top: 0.35rem; padding: 0.85rem; background: #FAFAFC; border: 1px solid #E2E8F0; border-radius: 12px; line-height: 1.5;">
+          📍 {{ booking.address }}
+        </div>
+      </div>
+
+      {% if booking.notes %}
+        <div>
+          <div style="font-size: 0.78rem; font-weight: 700; color: #64748B; text-transform: uppercase;">Customer Instructions</div>
+          <div style="font-size: 0.9rem; color: #475569; margin-top: 0.35rem; padding: 0.85rem; background: #FFFBEB; border: 1px solid #FEF3C7; border-radius: 12px; line-height: 1.5;">
+            💬 "{{ booking.notes }}"
+          </div>
+        </div>
+      {% endif %}
+    </div>
+
+  </div>
+
+  <!-- Right: Schedule & Payout Calculation -->
+  <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+
+    <!-- Appointment Timing Card -->
+    <div class="job-detail-card">
+      <h3 style="font-size: 1.1rem; font-weight: 800; color: #1E293B; margin-bottom: 1rem; border-bottom: 1px solid #E2E8F0; padding-bottom: 0.75rem;">
+        Scheduled Appointment
+      </h3>
+      <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+        <div style="width: 50px; height: 50px; background: #F0F4FD; color: #0D6EFD; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.1rem;">
+          📅
+        </div>
+        <div>
+          <div style="font-size: 1.05rem; font-weight: 800; color: #1E293B;">
+            {{ booking.booking_date|date:"l, F d, Y" }}
+          </div>
+          <div style="font-size: 0.9rem; font-weight: 700; color: #0D6EFD;">
+            ⏰ {{ booking.booking_time|time:"g:i A" }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Payout & Fee Ledger -->
+    <div class="job-detail-card">
+      <h3 style="font-size: 1.1rem; font-weight: 800; color: #1E293B; margin-bottom: 0.75rem; border-bottom: 1px solid #E2E8F0; padding-bottom: 0.75rem;">
+        Earnings Breakdown
+      </h3>
+
+      <div class="financial-breakdown-box" style="margin-top: 0;">
+        <div class="financial-row">
+          <span>Customer Booking Price</span>
+          <strong style="color: #1E293B;">₹{{ booking.total_amount|floatformat:2 }}</strong>
+        </div>
+        <div class="financial-row">
+          <span>Servora Fee ({{ booking.commission_rate }}%)</span>
+          <span style="color: #DC2626;">- ₹{{ booking.commission_amount|floatformat:2 }}</span>
+        </div>
+        <div class="financial-row highlight-payout">
+          <span>Your Net Earning</span>
+          <span>₹{{ provider_earning|floatformat:2 }}</span>
+        </div>
+      </div>
+
+      <!-- Action Buttons Depending on Status -->
+      <div style="margin-top: 1.5rem; display: flex; flex-direction: column; gap: 0.75rem;">
+        {% if booking.status == 'pending' %}
+          <form action="{% url 'provider_job_accept' booking.id %}" method="POST">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-primary" style="width: 100%;">
+              ✓ Accept This Job
+            </button>
+          </form>
+          <form action="{% url 'provider_job_decline' booking.id %}" method="POST">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline" style="width: 100%; color: #DC2626; border-color: #FCA5A5;">
+              ✕ Decline Request
+            </button>
+          </form>
+        {% elif booking.status == 'accepted' %}
+          <form action="{% url 'provider_job_complete' booking.id %}" method="POST">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-dark" style="width: 100%; background: #10B981; border-color: #10B981; font-weight: 700;">
+              ✓ Mark Job as Completed
+            </button>
+          </form>
+          <p style="font-size: 0.78rem; color: #64748B; text-align: center; margin: 0;">
+            Marking this job completed will add ₹{{ provider_earning|floatformat:0 }} to your earnings balance.
+          </p>
+        {% elif booking.status == 'completed' %}
+          <div style="background: #ECFDF5; border: 1px solid #A7F3D0; color: #065F46; padding: 1rem; border-radius: 12px; font-weight: 700; font-size: 0.9rem; text-align: center;">
+            ✓ Job Completed & Settled in Ledger
+          </div>
+        {% elif booking.status == 'declined' %}
+          <div style="background: #FEF2F2; border: 1px solid #FECACA; color: #991B1B; padding: 1rem; border-radius: 12px; font-size: 0.85rem; text-align: center;">
+            This job request was declined. The appointment slot is open for others.
+          </div>
+        {% elif booking.status == 'cancelled' %}
+          <div style="background: #F1F5F9; border: 1px solid #E2E8F0; color: #475569; padding: 1rem; border-radius: 12px; font-size: 0.85rem; text-align: center;">
+            This booking was cancelled by the customer.
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}

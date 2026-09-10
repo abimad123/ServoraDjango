@@ -1,0 +1,266 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ service.title }} – Servora Local Home Services{% endblock %}
+{% block meta_description %}{{ service.description|truncatewords:25 }}{% endblock %}
+
+{% block extra_css %}
+  <link rel="stylesheet" href="{% static 'css/customer.css' %}">
+{% endblock %}
+
+{% block content %}
+<section class="detail-section">
+  <div class="container">
+    <!-- Breadcrumbs Navigation -->
+    <div class="detail-breadcrumb">
+      <a href="{% url 'home' %}">Home</a>
+      <span>/</span>
+      <a href="{% url 'service_list' %}">Services</a>
+      <span>/</span>
+      <a href="{% url 'category_services' service.category.name %}">{{ service.category.name }}</a>
+      <span>/</span>
+      <span style="color: var(--brand-dark); font-weight: 600;">{{ service.title }}</span>
+    </div>
+
+    <!-- Main Detail Grid -->
+    <div class="detail-grid">
+      <!-- Left Column: Details, Inclusions, Reviews -->
+      <div class="detail-main">
+        <!-- Service Hero Visual Banner -->
+        <div class="detail-banner">
+          <div>
+            <span class="badge" style="background: #FFFFFF; color: #2563EB; margin-bottom: 14px; font-weight: 700;">
+              {{ service.category.name }}
+            </span>
+            <h1 style="font-size: clamp(1.8rem, 3vw, 2.4rem); margin-bottom: 12px; color: var(--brand-dark);">
+              {{ service.title }}
+            </h1>
+            <div style="display: flex; align-items: center; gap: 14px; font-size: 0.95rem; color: var(--text-secondary);">
+              <span style="display: flex; align-items: center; gap: 4px; color: #F59E0B; font-weight: 700;">
+                ★ {{ service.average_rating }}
+              </span>
+              <span>({{ service.reviews_count }} verified reviews)</span>
+              <span>&bull;</span>
+              <span>📍 {{ service.location }}</span>
+            </div>
+          </div>
+          <div class="detail-banner-icon">
+            {% if service.category.icon_name == 'spark' %}✨
+            {% elif service.category.icon_name == 'zap' %}⚡
+            {% elif service.category.icon_name == 'wrench' %}🔧
+            {% elif service.category.icon_name == 'paint' %}🎨
+            {% elif service.category.icon_name == 'hammer' %}🔨
+            {% elif service.category.icon_name == 'leaf' %}🌿
+            {% elif service.category.icon_name == 'book' %}📚
+            {% elif service.category.icon_name == 'camera' %}📷
+            {% elif service.category.icon_name == 'cpu' %}💻
+            {% else %}🛠️{% endif %}
+          </div>
+        </div>
+
+        <!-- Service Description Card -->
+        <div class="detail-card">
+          <h3>About This Service</h3>
+          <p style="font-size: 1.02rem; line-height: 1.7; color: var(--text-secondary);">
+            {{ service.description }}
+          </p>
+        </div>
+
+        <!-- What's Included Card -->
+        <div class="detail-card">
+          <h3>What's Included in This Service</h3>
+          <div class="included-grid">
+            <div class="included-item">
+              <span class="included-check">✓</span>
+              <span>Background-verified professional technician</span>
+            </div>
+            <div class="included-item">
+              <span class="included-check">✓</span>
+              <span>On-site problem diagnosis & inspection</span>
+            </div>
+            <div class="included-item">
+              <span class="included-check">✓</span>
+              <span>Standard repair tools & safety gear</span>
+            </div>
+            <div class="included-item">
+              <span class="included-check">✓</span>
+              <span>Post-service cleaning of work area</span>
+            </div>
+            <div class="included-item">
+              <span class="included-check">✓</span>
+              <span>30-Day Servora Service Warranty</span>
+            </div>
+            <div class="included-item">
+              <span class="included-check">✓</span>
+              <span>Digital invoicing & secure platform payment</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pricing Note Card -->
+        <div class="detail-card" style="background: var(--bg-blue-tint); border-color: #DBEAFE;">
+          <h3 style="color: #1E40AF; margin-bottom: 8px;">Transparent Pricing Guarantee</h3>
+          <p style="color: #1E3A8A; font-size: 0.94rem; margin: 0;">
+            The starting price of <strong>₹{{ service.price|floatformat:0 }}</strong> covers the standard inspection and initial service labor. Any necessary replacement parts or extended work will always be quoted upfront by the provider before proceeding.
+          </p>
+        </div>
+
+        <!-- Customer Reviews Section -->
+        <div class="detail-card">
+          <div class="reviews-header-block">
+            <div>
+              <h3 style="margin-bottom: 4px;">Customer Reviews</h3>
+              <p class="text-sm">Verified feedback from homeowners who booked this service</p>
+            </div>
+            <div style="text-align: right;">
+              <span style="font-size: 1.8rem; font-weight: 800; color: var(--brand-dark);">{{ service.average_rating }}</span>
+              <span style="color: #F59E0B; font-size: 1.2rem;">★</span>
+              <div class="text-xs" style="color: var(--text-muted);">{{ service.reviews_count }} verified reviews</div>
+            </div>
+          </div>
+
+          {% if reviews %}
+            <div class="reviews-list">
+              {% for review in reviews %}
+                <div class="review-item">
+                  <div class="review-meta">
+                    <div class="review-author">
+                      {{ review.customer.get_full_name|default:review.customer.username }}
+                    </div>
+                    <div class="review-stars">
+                      {% for i in "12345" %}
+                        {% if forloop.counter <= review.rating %}★{% else %}☆{% endif %}
+                      {% endfor %}
+                    </div>
+                  </div>
+                  <p class="review-comment">"{{ review.comment }}"</p>
+                  <span class="text-xs" style="color: var(--text-muted); display: block; margin-top: 6px;">
+                    Reviewed on {{ review.created_at|date:"F d, Y" }}
+                  </span>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <p class="text-sm" style="font-style: italic; color: var(--text-muted); margin: 0;">
+              No reviews submitted yet for this service. Be the first to book and leave a review!
+            </p>
+          {% endif %}
+        </div>
+
+        <!-- Other Services by this Provider -->
+        {% if other_services %}
+          <div style="margin-top: 40px;">
+            <h3 style="font-size: 1.25rem; margin-bottom: 18px;">More Services from {{ service.provider.user.first_name }}</h3>
+            <div class="provider-grid" style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px;">
+              {% for other in other_services %}
+                <div class="service-card">
+                  <div class="service-card-body" style="padding: 18px;">
+                    <span class="badge" style="background: var(--bg-blue-tint); color: #2563EB; margin-bottom: 10px; width: fit-content;">
+                      {{ other.category.name }}
+                    </span>
+                    <h4 style="font-size: 1rem; margin-bottom: 8px;">
+                      <a href="{% url 'service_detail' other.id %}">{{ other.title }}</a>
+                    </h4>
+                    <div class="service-meta" style="padding-top: 12px;">
+                      <span class="service-price" style="font-size: 1.15rem;">₹{{ other.price|floatformat:0 }}</span>
+                      <a href="{% url 'service_detail' other.id %}" class="btn btn-outline btn-sm">View</a>
+                    </div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
+      </div>
+
+      <!-- Right Column: Sticky Booking & Provider Card -->
+      <div class="detail-sidebar">
+        <div class="detail-sidebar-sticky">
+          <!-- Booking Action Box -->
+          <div class="booking-box-card">
+            <div class="booking-box-price-row">
+              <div>
+                <span class="service-price-label">Starting Price</span>
+                <div class="booking-box-price">₹{{ service.price|floatformat:0 }}</div>
+              </div>
+              <span class="badge badge-completed">Instant Booking</span>
+            </div>
+
+            <div class="booking-specs-list">
+              <div class="booking-spec-row">
+                <span class="booking-spec-label">Estimated Time:</span>
+                <span class="booking-spec-value">{{ service.duration_estimate }}</span>
+              </div>
+              <div class="booking-spec-row">
+                <span class="booking-spec-label">Service Area:</span>
+                <span class="booking-spec-value">📍 {{ service.location }}</span>
+              </div>
+              <div class="booking-spec-row">
+                <span class="booking-spec-label">Category:</span>
+                <span class="booking-spec-value">{{ service.category.name }}</span>
+              </div>
+              <div class="booking-spec-row">
+                <span class="booking-spec-label">Platform Fee:</span>
+                <span class="booking-spec-value" style="color: #059669;">Included (10%)</span>
+              </div>
+            </div>
+
+            <a href="{% url 'book_service' service.id %}" class="btn btn-primary btn-lg" style="width: 100%; margin-bottom: 12px; box-shadow: 0 8px 20px rgba(255, 90, 54, 0.35);">
+              Book This Service Now
+            </a>
+
+            <div style="text-align: center; font-size: 0.8rem; color: var(--text-muted);">
+              🔒 Safe & Secure &bull; No upfront card payment required
+            </div>
+          </div>
+
+          <!-- Provider Card Snippet -->
+          <div class="provider-detail-card">
+            <div class="provider-detail-header">
+              <div class="hero-visual-avatar" style="width: 52px; height: 52px; font-size: 1.1rem;">
+                {{ service.provider.user.first_name|default:service.provider.user.username|slice:":2"|upper }}
+              </div>
+              <div>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <strong style="font-size: 1.05rem; color: var(--brand-dark);">
+                    {{ service.provider.user.get_full_name|default:service.provider.user.username }}
+                  </strong>
+                  {% if service.provider.is_verified %}
+                    <span class="badge badge-verified" style="padding: 2px 6px; font-size: 0.7rem;">Verified</span>
+                  {% endif %}
+                </div>
+                <div class="text-xs" style="color: var(--text-secondary); margin-top: 2px;">
+                  {{ service.provider.city }} &bull; Provider Partner
+                </div>
+              </div>
+            </div>
+
+            <p class="text-sm" style="margin-bottom: 16px; color: var(--text-secondary); line-height: 1.5;">
+              {{ service.provider.bio|truncatewords:20|default:"Dedicated local service professional on Servora." }}
+            </p>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--bg-cool-gray); border-radius: var(--radius-md); margin-bottom: 16px;">
+              <div>
+                <div style="font-weight: 800; color: var(--brand-dark); font-size: 1.1rem;">
+                  {{ service.provider.completed_jobs_count }}
+                </div>
+                <div class="text-xs" style="color: var(--text-muted); text-transform: uppercase;">Completed Jobs</div>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-weight: 800; color: var(--brand-dark); font-size: 1.1rem;">
+                  {{ service.provider.average_rating }} <span style="color: #F59E0B;">★</span>
+                </div>
+                <div class="text-xs" style="color: var(--text-muted); text-transform: uppercase;">Overall Rating</div>
+              </div>
+            </div>
+
+            <a href="{% url 'provider_profile' service.provider.id %}" class="btn btn-outline" style="width: 100%;">
+              View Full Provider Profile
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

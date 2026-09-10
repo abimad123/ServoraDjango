@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}My Bookings – Servora{% endblock %}
+
+{% block extra_css %}
+  <link rel="stylesheet" href="{% static 'css/customer.css' %}">
+  <link rel="stylesheet" href="{% static 'css/booking.css' %}">
+{% endblock %}
+
+{% block content %}
+<section class="section" style="padding: 40px 0 80px;">
+  <div class="container">
+    <!-- Header -->
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 30px; flex-wrap: wrap; gap: 16px;">
+      <div>
+        <span class="section-subtitle">Customer Portal</span>
+        <h1 style="font-size: 2rem; margin-bottom: 4px;">My Bookings</h1>
+        <p class="text-sm">Manage and track your home service appointments and past completed jobs.</p>
+      </div>
+      <a href="{% url 'service_list' %}" class="btn btn-primary btn-sm">
+        + Book New Service
+      </a>
+    </div>
+
+    {% if bookings %}
+      <div style="overflow-x: auto;">
+        <table class="bookings-table">
+          <thead>
+            <tr>
+              <th>Reference</th>
+              <th>Service</th>
+              <th>Provider Partner</th>
+              <th>Date & Time</th>
+              <th>Total Amount</th>
+              <th>Status</th>
+              <th style="text-align: right;">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for b in bookings %}
+              <tr class="booking-row-card">
+                <td>
+                  <strong>#SVR{{ b.id|stringformat:"05d" }}</strong>
+                </td>
+                <td>
+                  <strong style="color: var(--brand-dark);">{{ b.service.title }}</strong>
+                  <div class="text-xs" style="color: var(--text-secondary);">{{ b.service.category.name }}</div>
+                </td>
+                <td>
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                    <div class="hero-visual-avatar" style="width: 34px; height: 34px; font-size: 0.82rem;">
+                      {{ b.service.provider.user.first_name|default:b.service.provider.user.username|slice:":2"|upper }}
+                    </div>
+                    <span>{{ b.service.provider.user.get_full_name|default:b.service.provider.user.username }}</span>
+                  </div>
+                </td>
+                <td>
+                  <div>{{ b.booking_date|date:"M d, Y" }}</div>
+                  <div class="text-xs" style="color: var(--text-muted);">{{ b.booking_time|time:"g:i A" }}</div>
+                </td>
+                <td>
+                  <strong style="color: var(--brand-dark);">₹{{ b.total_amount|floatformat:0 }}</strong>
+                </td>
+                <td>
+                  {% if b.status == 'pending' %}
+                    <span class="badge badge-pending">Pending Approval</span>
+                  {% elif b.status == 'accepted' %}
+                    <span class="badge" style="background: #EFF6FF; color: #2563EB;">Accepted &bull; Upcoming</span>
+                  {% elif b.status == 'completed' %}
+                    <span class="badge badge-completed">Completed</span>
+                  {% elif b.status == 'cancelled' %}
+                    <span class="badge badge-cancelled">Cancelled</span>
+                  {% elif b.status == 'declined' %}
+                    <span class="badge badge-declined">Declined</span>
+                  {% else %}
+                    <span class="badge">{{ b.get_status_display }}</span>
+                  {% endif %}
+                </td>
+                <td style="text-align: right;">
+                  <a href="{% url 'booking_detail' b.id %}" class="btn btn-outline btn-sm">
+                    View Details
+                  </a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <div class="empty-state-icon">📅</div>
+        <h3>No bookings yet</h3>
+        <p>You haven't scheduled any home service appointments yet. Discover verified professionals and book your first service today!</p>
+        <a href="{% url 'service_list' %}" class="btn btn-primary">
+          Explore Services
+        </a>
+      </div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

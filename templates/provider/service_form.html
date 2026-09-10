@@ -1,0 +1,121 @@
+{% extends "provider/base_provider.html" %}
+
+{% block title %}{{ page_title }} – Servora Workspace{% endblock %}
+
+{% block provider_content %}
+<div class="provider-topbar">
+  <div>
+    <a href="{% url 'provider_services' %}" style="font-size: 0.85rem; font-weight: 700; color: #0D6EFD; text-decoration: none; display: inline-flex; align-items: center; gap: 0.35rem; margin-bottom: 0.5rem;">
+      &larr; Back to Services List
+    </a>
+    <div class="provider-greeting">
+      <h1>{{ page_title }}</h1>
+      <p>Configure pricing, scope of work, and service details for marketplace discovery.</p>
+    </div>
+  </div>
+</div>
+
+<div class="provider-form-card">
+  <form method="POST" enctype="multipart/form-data" novalidate>
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+      <div class="alert alert-error" style="margin-bottom: 1.5rem;">
+        {% for err in form.non_field_errors %}
+          <div>{{ err }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <!-- Service Title -->
+    <div class="form-group" style="margin-bottom: 1.25rem;">
+      <label class="form-label" for="id_title">Service Title *</label>
+      {{ form.title }}
+      {% if form.title.errors %}
+        <div style="color: #DC2626; font-size: 0.8rem; margin-top: 0.35rem;">{{ form.title.errors.0 }}</div>
+      {% endif %}
+    </div>
+
+    <!-- Category & Starting Price -->
+    <div class="form-grid-two" style="margin-bottom: 1.25rem;">
+      <div class="form-group">
+        <label class="form-label" for="id_category">Category *</label>
+        {{ form.category }}
+        {% if form.category.errors %}
+          <div style="color: #DC2626; font-size: 0.8rem; margin-top: 0.35rem;">{{ form.category.errors.0 }}</div>
+        {% endif %}
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="id_price">Starting Price (₹ INR) *</label>
+        {{ form.price }}
+        {% if form.price.errors %}
+          <div style="color: #DC2626; font-size: 0.8rem; margin-top: 0.35rem;">{{ form.price.errors.0 }}</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Duration & Location -->
+    <div class="form-grid-two" style="margin-bottom: 1.25rem;">
+      <div class="form-group">
+        <label class="form-label" for="id_duration_estimate">Estimated Duration *</label>
+        {{ form.duration_estimate }}
+        <span style="font-size: 0.75rem; color: #64748B;">e.g. 1-2 hours, Half day, Full day</span>
+        {% if form.duration_estimate.errors %}
+          <div style="color: #DC2626; font-size: 0.8rem; margin-top: 0.35rem;">{{ form.duration_estimate.errors.0 }}</div>
+        {% endif %}
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="id_location">Service Area / Location *</label>
+        {{ form.location }}
+        <span style="font-size: 0.75rem; color: #64748B;">e.g. Kannur, Kochi, or Calicut</span>
+        {% if form.location.errors %}
+          <div style="color: #DC2626; font-size: 0.8rem; margin-top: 0.35rem;">{{ form.location.errors.0 }}</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Description -->
+    <div class="form-group" style="margin-bottom: 1.25rem;">
+      <label class="form-label" for="id_description">Service Scope & Description *</label>
+      {{ form.description }}
+      <span style="font-size: 0.75rem; color: #64748B;">Explain what is included, materials used, diagnostic steps, and warranty.</span>
+      {% if form.description.errors %}
+        <div style="color: #DC2626; font-size: 0.8rem; margin-top: 0.35rem;">{{ form.description.errors.0 }}</div>
+      {% endif %}
+    </div>
+
+    <!-- Image Upload -->
+    <div class="form-group" style="margin-bottom: 1.5rem;">
+      <label class="form-label" for="id_image">Service Photo (Optional)</label>
+      {{ form.image }}
+      {% if service.image %}
+        <div style="margin-top: 0.5rem; font-size: 0.8rem; color: #64748B;">
+          Current image: <a href="{{ service.image.url }}" target="_blank" style="color: #0D6EFD;">View current photo</a>
+        </div>
+      {% endif %}
+      {% if form.image.errors %}
+        <div style="color: #DC2626; font-size: 0.8rem; margin-top: 0.35rem;">{{ form.image.errors.0 }}</div>
+      {% endif %}
+    </div>
+
+    <!-- Active Checkbox -->
+    <div style="display: flex; align-items: center; gap: 0.65rem; margin-bottom: 2rem; padding: 1rem; background: #FAFAFC; border: 1px solid #E2E8F0; border-radius: 12px;">
+      {{ form.is_active }}
+      <label for="id_is_active" style="font-weight: 700; font-size: 0.92rem; color: #1E293B; cursor: pointer;">
+        Service is Active & Available for Booking
+      </label>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 1rem;">
+      <button type="submit" class="btn btn-primary">
+        {{ submit_label }}
+      </button>
+      <a href="{% url 'provider_services' %}" class="btn btn-ghost">
+        Cancel
+      </a>
+    </div>
+  </form>
+</div>
+{% endblock %}

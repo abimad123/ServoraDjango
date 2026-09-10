@@ -1,0 +1,143 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ provider.user.get_full_name|default:provider.user.username }} – Verified Service Professional – Servora{% endblock %}
+
+{% block extra_css %}
+  <link rel="stylesheet" href="{% static 'css/customer.css' %}">
+{% endblock %}
+
+{% block content %}
+<!-- ================= PROVIDER PROFILE HERO ================= -->
+<section class="provider-profile-hero">
+  <div class="container">
+    <div class="detail-breadcrumb">
+      <a href="{% url 'home' %}">Home</a>
+      <span>/</span>
+      <a href="{% url 'service_list' %}">Providers</a>
+      <span>/</span>
+      <span>{{ provider.user.get_full_name|default:provider.user.username }}</span>
+    </div>
+
+    <!-- Main Profile Card -->
+    <div class="provider-profile-card">
+      <div class="provider-profile-main">
+        <div class="provider-avatar-lg">
+          {{ provider.user.first_name|default:provider.user.username|slice:":2"|upper }}
+        </div>
+        <div>
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
+            <h1 style="font-size: clamp(1.8rem, 3vw, 2.3rem); margin: 0; color: var(--brand-dark);">
+              {{ provider.user.get_full_name|default:provider.user.username }}
+            </h1>
+            {% if provider.is_verified %}
+              <span class="badge badge-verified" style="padding: 4px 10px; font-size: 0.8rem;">Verified Pro</span>
+            {% endif %}
+          </div>
+          <div style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 8px;">
+            📍 {{ provider.city }} &bull; Member since {{ provider.created_at|date:"Y" }}
+          </div>
+          <p style="max-width: 580px; font-size: 0.95rem; line-height: 1.6; color: var(--text-secondary); margin: 0;">
+            {{ provider.bio|default:"Experienced local service provider committed to top-quality craft and reliable customer satisfaction." }}
+          </p>
+        </div>
+      </div>
+
+      <!-- Stats Bar -->
+      <div class="provider-metrics-bar">
+        <div class="provider-metric">
+          <div class="provider-metric-val">{{ completed_jobs }}</div>
+          <div class="provider-metric-label">Completed Jobs</div>
+        </div>
+        <div class="provider-metric" style="border-left: 1px solid var(--border-subtle); padding-left: 24px;">
+          <div class="provider-metric-val">{{ average_rating }} <span style="color: #F59E0B;">★</span></div>
+          <div class="provider-metric-label">Rating ({{ total_reviews }})</div>
+        </div>
+        <div class="provider-metric" style="border-left: 1px solid var(--border-subtle); padding-left: 24px;">
+          <div class="provider-metric-val" style="color: #059669;">100%</div>
+          <div class="provider-metric-label">Job Guarantee</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SERVICES OFFERED BY PROVIDER ================= -->
+<section class="section" style="padding-top: 50px;">
+  <div class="container">
+    <div class="section-header" style="text-align: left; margin-bottom: 30px;">
+      <span class="section-subtitle">Catalog</span>
+      <h2>Services Offered by {{ provider.user.first_name|default:provider.user.username }}</h2>
+      <p>Select any of the specialized services below to view details and schedule a booking.</p>
+    </div>
+
+    {% if services %}
+      <div class="provider-grid">
+        {% for service in services %}
+          <div class="service-card card-hover">
+            <div class="service-card-body">
+              <div class="service-card-badge-row">
+                <span class="badge" style="background: var(--bg-blue-tint); color: #2563EB;">
+                  {{ service.category.name }}
+                </span>
+                {% if service.is_featured %}
+                  <span class="badge badge-pro">Featured</span>
+                {% endif %}
+              </div>
+
+              <h3 class="service-title">
+                <a href="{% url 'service_detail' service.id %}">{{ service.title }}</a>
+              </h3>
+              <p class="service-desc">{{ service.description }}</p>
+
+              <div class="service-meta">
+                <div class="service-price-block">
+                  <span class="service-price-label">Starting Price</span>
+                  <span class="service-price">₹{{ service.price|floatformat:0 }}</span>
+                </div>
+                <div class="service-card-actions">
+                  <a href="{% url 'service_detail' service.id %}" class="btn btn-outline btn-sm">Details</a>
+                  <a href="{% url 'book_service' service.id %}" class="btn btn-primary btn-sm">Book</a>
+                </div>
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <p>This provider has not published any active services yet.</p>
+      </div>
+    {% endif %}
+
+    <!-- Customer Reviews for this Provider -->
+    {% if reviews %}
+      <div style="margin-top: 70px;">
+        <div class="section-header" style="text-align: left; margin-bottom: 24px;">
+          <span class="section-subtitle">Verified Feedback</span>
+          <h2>What Clients Say About {{ provider.user.first_name }}</h2>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px;">
+          {% for review in reviews %}
+            <div class="card" style="padding: 22px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                <strong style="font-size: 0.95rem; color: var(--brand-dark);">
+                  {{ review.customer.get_full_name|default:review.customer.username }}
+                </strong>
+                <span style="color: #F59E0B; font-weight: 700;">★ {{ review.rating }}.0</span>
+              </div>
+              <p style="font-size: 0.9rem; color: var(--text-secondary); line-height: 1.6; margin-bottom: 12px;">
+                "{{ review.comment }}"
+              </p>
+              <div class="text-xs" style="color: var(--text-muted);">
+                On <em>{{ review.service.title }}</em> &bull; {{ review.created_at|date:"M d, Y" }}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

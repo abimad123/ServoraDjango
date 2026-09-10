@@ -1,0 +1,314 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Book {{ service.title }} – Servora{% endblock %}
+
+{% block extra_css %}
+  <link rel="stylesheet" href="{% static 'css/customer.css' %}">
+  <link rel="stylesheet" href="{% static 'css/booking.css' %}">
+{% endblock %}
+
+{% block content %}
+<section class="section" style="padding: 40px 0 80px;">
+  <div class="container">
+    <!-- Breadcrumb -->
+    <div class="detail-breadcrumb" style="margin-bottom: 30px;">
+      <a href="{% url 'home' %}">Home</a>
+      <span>/</span>
+      <a href="{% url 'service_list' %}">Services</a>
+      <span>/</span>
+      <a href="{% url 'service_detail' service.id %}">{{ service.title }}</a>
+      <span>/</span>
+      <span style="color: var(--brand-dark); font-weight: 600;">Schedule & Book</span>
+    </div>
+
+    <!-- Stepper Indicator -->
+    <div class="booking-progress-bar">
+      <div class="step-item active" data-step="1">
+        <div class="step-circle">01</div>
+        <span class="step-label">Service</span>
+      </div>
+      <div class="step-item" data-step="2">
+        <div class="step-circle">02</div>
+        <span class="step-label">Date & Time</span>
+      </div>
+      <div class="step-item" data-step="3">
+        <div class="step-circle">03</div>
+        <span class="step-label">Details</span>
+      </div>
+      <div class="step-item" data-step="4">
+        <div class="step-circle">04</div>
+        <span class="step-label">Confirm</span>
+      </div>
+    </div>
+
+    <!-- Main Booking Layout Grid -->
+    <div class="booking-layout-grid">
+      <!-- Left Column: Form & Multi-Step Views -->
+      <div class="booking-main-card">
+        <form method="POST" action="{% url 'book_service' service.id %}" id="booking-form">
+          {% csrf_token %}
+          <input type="hidden" id="service-id-hidden" value="{{ service.id }}">
+          
+          <!-- Hidden real form fields managed by calendar & slot selectors -->
+          <input type="hidden" name="booking_date" id="id_booking_date" value="{{ form.booking_date.value|default:'' }}">
+          <input type="hidden" name="booking_time" id="id_booking_time" value="{{ form.booking_time.value|default:'' }}">
+
+          <!-- ================= STEP 1: SERVICE & PROVIDER ================= -->
+          <div class="booking-step-section active" data-step="1">
+            <h2 class="step-heading">Select Service & Provider</h2>
+            <p class="step-subheading">Confirm your selected home service and verified provider specialist.</p>
+
+            <!-- Service Summary Card -->
+            <div style="background: var(--bg-cool-gray); border-radius: var(--radius-lg); padding: 24px; border: 1px solid var(--border-subtle); margin-bottom: 24px;">
+              <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 12px;">
+                <span class="badge" style="background: var(--bg-blue-tint); color: #2563EB;">{{ service.category.name }}</span>
+                <span style="font-size: 1.3rem; font-weight: 800; color: var(--brand-dark);">₹{{ service.price|floatformat:0 }}</span>
+              </div>
+              <h3 style="font-size: 1.25rem; margin-bottom: 8px;">{{ service.title }}</h3>
+              <p class="text-sm" style="margin-bottom: 14px;">{{ service.description }}</p>
+              <div class="text-xs" style="color: var(--text-muted);">
+                ⏱ Estimated duration: <strong>{{ service.duration_estimate }}</strong> &bull; Location: <strong>📍 {{ service.location }}</strong>
+              </div>
+            </div>
+
+            <!-- Provider Card -->
+            <div style="border: 2px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 30px;">
+              <div style="display: flex; align-items: center; gap: 16px;">
+                <div class="hero-visual-avatar" style="width: 52px; height: 52px; font-size: 1.1rem;">
+                  {{ service.provider.user.first_name|default:service.provider.user.username|slice:":2"|upper }}
+                </div>
+                <div>
+                  <div style="display: flex; align-items: center; gap: 6px;">
+                    <strong style="font-size: 1.05rem; color: var(--brand-dark);">
+                      {{ service.provider.user.get_full_name|default:service.provider.user.username }}
+                    </strong>
+                    {% if service.provider.is_verified %}
+                      <span class="badge badge-verified" style="padding: 2px 6px; font-size: 0.7rem;">Verified</span>
+                    {% endif %}
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 8px; font-size: 0.82rem; color: var(--text-secondary); margin-top: 2px;">
+                    <span style="color: #F59E0B; font-weight: 700;">★ {{ service.provider.average_rating }}</span>
+                    <span>({{ service.provider.total_reviews_count }} reviews)</span>
+                    <span>&bull;</span>
+                    <span>{{ service.provider.completed_jobs_count }} completed jobs</span>
+                  </div>
+                </div>
+              </div>
+              <span class="badge badge-completed">Selected Provider</span>
+            </div>
+
+            <button type="button" class="btn btn-primary btn-lg btn-next-step" data-next="2" style="width: 100%;">
+              Continue to Choose Date & Time →
+            </button>
+          </div>
+
+          <!-- ================= STEP 2: DATE & TIME ================= -->
+          <div class="booking-step-section" data-step="2">
+            <h2 class="step-heading">Choose a Date & Preferred Time</h2>
+            <p class="step-subheading">Select an available future day and convenient service window.</p>
+
+            <!-- Interactive Calendar -->
+            <div class="calendar-widget">
+              <div class="calendar-header">
+                <span class="calendar-month-title" id="calendar-month-title">September 2026</span>
+                <div style="display: flex; gap: 8px;">
+                  <button type="button" class="calendar-nav-btn" id="calendar-prev-month" aria-label="Previous Month">&lsaquo;</button>
+                  <button type="button" class="calendar-nav-btn" id="calendar-next-month" aria-label="Next Month">&rsaquo;</button>
+                </div>
+              </div>
+
+              <div class="calendar-grid">
+                <div class="calendar-day-header">Sun</div>
+                <div class="calendar-day-header">Mon</div>
+                <div class="calendar-day-header">Tue</div>
+                <div class="calendar-day-header">Wed</div>
+                <div class="calendar-day-header">Thu</div>
+                <div class="calendar-day-header">Fri</div>
+                <div class="calendar-day-header">Sat</div>
+              </div>
+              <div class="calendar-grid" id="calendar-days-container" style="margin-top: 8px;"></div>
+            </div>
+
+            <!-- Time Slots Grouped by Period -->
+            <div>
+              <h3 style="font-size: 1.15rem; margin-bottom: 16px;">Select Service Time</h3>
+
+              <!-- Morning -->
+              <div class="time-slots-group">
+                <span class="time-period-title">🌅 Morning Slots (9:00 AM – 11:30 AM)</span>
+                <div class="time-slots-grid">
+                  {% for t_val, t_label in morning_slots %}
+                    <button type="button" class="time-slot-btn" data-time="{{ t_val }}" data-label="{{ t_label }}">
+                      {{ t_label }}
+                    </button>
+                  {% endfor %}
+                </div>
+              </div>
+
+              <!-- Afternoon -->
+              <div class="time-slots-group">
+                <span class="time-period-title">☀️ Afternoon Slots (1:00 PM – 3:30 PM)</span>
+                <div class="time-slots-grid">
+                  {% for t_val, t_label in afternoon_slots %}
+                    <button type="button" class="time-slot-btn" data-time="{{ t_val }}" data-label="{{ t_label }}">
+                      {{ t_label }}
+                    </button>
+                  {% endfor %}
+                </div>
+              </div>
+
+              <!-- Evening -->
+              <div class="time-slots-group">
+                <span class="time-period-title">🌆 Evening Slots (5:00 PM – 7:00 PM)</span>
+                <div class="time-slots-grid">
+                  {% for t_val, t_label in evening_slots %}
+                    <button type="button" class="time-slot-btn" data-time="{{ t_val }}" data-label="{{ t_label }}">
+                      {{ t_label }}
+                    </button>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 14px; margin-top: 30px;">
+              <button type="button" class="btn btn-outline btn-prev-step" data-prev="1" style="flex: 1;">
+                ← Back
+              </button>
+              <button type="button" class="btn btn-primary btn-next-step" data-next="3" style="flex: 2;">
+                Continue to Booking Details →
+              </button>
+            </div>
+          </div>
+
+          <!-- ================= STEP 3: DETAILS ================= -->
+          <div class="booking-step-section" data-step="3">
+            <h2 class="step-heading">Enter Service Details</h2>
+            <p class="step-subheading">Provide your exact service address and any special instructions for the technician.</p>
+
+            <div class="form-group">
+              <label class="form-label" for="id_address">Service Location & Address *</label>
+              <textarea name="address" id="id_address" class="form-textarea" rows="3" required placeholder="House/Flat No, Apartment/Building, Street, Landmark, City...">{{ form.address.value|default:'' }}</textarea>
+              <span class="form-help">Ensure your complete address is entered so the technician can arrive on time.</span>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="id_notes">Special Instructions or Problem Description (Optional)</label>
+              <textarea name="notes" id="id_notes" class="form-textarea" rows="3" placeholder="Describe the issue in detail, preferred gate entry, pet warnings, etc...">{{ form.notes.value|default:'' }}</textarea>
+            </div>
+
+            <div style="display: flex; gap: 14px; margin-top: 30px;">
+              <button type="button" class="btn btn-outline btn-prev-step" data-prev="2" style="flex: 1;">
+                ← Back
+              </button>
+              <button type="button" class="btn btn-primary btn-next-step" data-next="4" style="flex: 2;">
+                Review Booking Summary →
+              </button>
+            </div>
+          </div>
+
+          <!-- ================= STEP 4: CONFIRM ================= -->
+          <div class="booking-step-section" data-step="4">
+            <h2 class="step-heading">Review & Confirm Booking</h2>
+            <p class="step-subheading">Please inspect your booking summary before submitting the job request.</p>
+
+            <div class="ticket-box">
+              <div class="ticket-row">
+                <span style="color: var(--text-muted);">Service:</span>
+                <strong>{{ service.title }}</strong>
+              </div>
+              <div class="ticket-row">
+                <span style="color: var(--text-muted);">Professional:</span>
+                <strong>{{ service.provider.user.get_full_name|default:service.provider.user.username }} ✓</strong>
+              </div>
+              <div class="ticket-row">
+                <span style="color: var(--text-muted);">Scheduled Date:</span>
+                <strong id="review-date">Not selected</strong>
+              </div>
+              <div class="ticket-row">
+                <span style="color: var(--text-muted);">Scheduled Time:</span>
+                <strong id="review-time">Not selected</strong>
+              </div>
+              <div class="ticket-row">
+                <span style="color: var(--text-muted);">Service Address:</span>
+                <strong id="review-address" style="text-align: right; max-width: 60%;">Not entered</strong>
+              </div>
+              <div class="ticket-row">
+                <span style="color: var(--text-muted);">Instructions:</span>
+                <span id="review-notes" style="color: var(--text-secondary);">None</span>
+              </div>
+              <div class="ticket-row" style="padding-top: 12px; margin-top: 12px; border-top: 1px dashed var(--border-subtle);">
+                <span style="color: var(--text-muted);">Estimated Starting Total:</span>
+                <strong style="font-size: 1.3rem; color: var(--accent-primary);">₹{{ service.price|floatformat:0 }}</strong>
+              </div>
+            </div>
+
+            <div style="background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: var(--radius-md); padding: 16px; margin-bottom: 24px; font-size: 0.88rem; color: #065F46;">
+              ✓ <strong>Zero Upfront Payment:</strong> No credit/debit card is required right now. Pay the provider safely after job completion.
+            </div>
+
+            <div style="display: flex; gap: 14px;">
+              <button type="button" class="btn btn-outline btn-prev-step" data-prev="3" style="flex: 1;">
+                ← Edit Details
+              </button>
+              <button type="submit" class="btn btn-primary btn-lg" style="flex: 2;">
+                Confirm & Submit Booking Request
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <!-- Right Column: Sticky Live Booking Summary -->
+      <div class="booking-summary-card">
+        <h3 style="font-size: 1.25rem; margin-bottom: 18px;">Booking Summary</h3>
+
+        <div class="summary-service-row">
+          <div class="hero-visual-avatar" style="width: 48px; height: 48px; font-size: 1rem;">
+            {{ service.provider.user.first_name|default:service.provider.user.username|slice:":2"|upper }}
+          </div>
+          <div>
+            <h4 style="font-size: 0.98rem; margin-bottom: 4px;">{{ service.title }}</h4>
+            <div class="text-xs" style="color: var(--text-secondary);">
+              Provider: <strong>{{ service.provider.user.get_full_name|default:service.provider.user.username }}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="summary-detail-row">
+          <span style="color: var(--text-muted);">Date:</span>
+          <strong id="summary-date">Select date</strong>
+        </div>
+
+        <div class="summary-detail-row">
+          <span style="color: var(--text-muted);">Time Slot:</span>
+          <strong id="summary-time">Select time</strong>
+        </div>
+
+        <div class="summary-detail-row">
+          <span style="color: var(--text-muted);">Address:</span>
+          <span id="summary-address" style="color: var(--text-secondary);">Not entered</span>
+        </div>
+
+        <div class="summary-detail-row">
+          <span style="color: var(--text-muted);">Platform Fee (10%):</span>
+          <span style="color: #059669; font-weight: 600;">Included in total</span>
+        </div>
+
+        <div class="summary-total-row">
+          <span>Starting Total</span>
+          <div class="summary-total-amount">₹{{ service.price|floatformat:0 }}</div>
+        </div>
+
+        <div class="text-xs" style="color: var(--text-muted); margin-top: 14px; text-align: center;">
+          30-Day Servora Guarantee &bull; Free Cancellation before arrival
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+  <script src="{% static 'js/booking.js' %}"></script>
+{% endblock %}

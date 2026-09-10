@@ -1,0 +1,127 @@
+{% extends "provider/base_provider.html" %}
+
+{% block title %}Manage Jobs & Requests – Servora Workspace{% endblock %}
+
+{% block provider_content %}
+<div class="provider-topbar">
+  <div class="provider-greeting">
+    <h1>Job Requests & Appointments</h1>
+    <p>Manage all customer job inquiries, schedules, and completion states.</p>
+  </div>
+</div>
+
+<!-- Status Filter Tabs -->
+<div class="filter-tabs-container">
+  <a href="{% url 'provider_jobs' %}?status=all" class="filter-tab {% if status_filter == 'all' %}active{% endif %}">
+    <span>All Jobs</span>
+    <span class="tab-badge">{{ all_count }}</span>
+  </a>
+  <a href="{% url 'provider_jobs' %}?status=pending" class="filter-tab {% if status_filter == 'pending' %}active{% endif %}">
+    <span>Pending Requests</span>
+    <span class="tab-badge">{{ pending_count }}</span>
+  </a>
+  <a href="{% url 'provider_jobs' %}?status=accepted" class="filter-tab {% if status_filter == 'accepted' %}active{% endif %}">
+    <span>Accepted</span>
+    <span class="tab-badge">{{ accepted_count }}</span>
+  </a>
+  <a href="{% url 'provider_jobs' %}?status=completed" class="filter-tab {% if status_filter == 'completed' %}active{% endif %}">
+    <span>Completed</span>
+    <span class="tab-badge">{{ completed_count }}</span>
+  </a>
+  <a href="{% url 'provider_jobs' %}?status=declined" class="filter-tab {% if status_filter == 'declined' %}active{% endif %}">
+    <span>Declined</span>
+    <span class="tab-badge">{{ declined_count }}</span>
+  </a>
+  <a href="{% url 'provider_jobs' %}?status=cancelled" class="filter-tab {% if status_filter == 'cancelled' %}active{% endif %}">
+    <span>Cancelled</span>
+    <span class="tab-badge">{{ cancelled_count }}</span>
+  </a>
+</div>
+
+<!-- Jobs Table -->
+{% if bookings %}
+  <div class="provider-table-wrapper">
+    <table class="provider-table">
+      <thead>
+        <tr>
+          <th>Booking ID</th>
+          <th>Service</th>
+          <th>Customer</th>
+          <th>Scheduled Time</th>
+          <th>Total / Net Earning</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in bookings %}
+          <tr>
+            <td>
+              <span style="font-weight: 700; color: #64748B;">#SVR{{ b.id|stringformat:"05d" }}</span>
+            </td>
+            <td>
+              <div style="font-weight: 700; color: #1E293B;">{{ b.service.title }}</div>
+              <div style="font-size: 0.78rem; color: #64748B;">{{ b.service.category.name }}</div>
+            </td>
+            <td>
+              <div style="font-weight: 600;">{{ b.customer.get_full_name|default:b.customer.username }}</div>
+              {% if b.customer.profile.phone %}
+                <div style="font-size: 0.78rem; color: #64748B;">📞 {{ b.customer.profile.phone }}</div>
+              {% endif %}
+            </td>
+            <td>
+              <div style="font-weight: 600;">{{ b.booking_date|date:"d M Y" }}</div>
+              <div style="font-size: 0.78rem; color: #0D6EFD; font-weight: 700;">{{ b.booking_time|time:"g:i A" }}</div>
+            </td>
+            <td>
+              <div style="font-weight: 800; color: #10B981;">₹{{ b.total_amount|floatformat:0 }}</div>
+              <div style="font-size: 0.75rem; color: #64748B;">Take-home: 90%</div>
+            </td>
+            <td>
+              {% if b.status == 'pending' %}
+                <span class="badge-status-pending">Pending</span>
+              {% elif b.status == 'accepted' %}
+                <span class="badge-status-accepted">Accepted</span>
+              {% elif b.status == 'completed' %}
+                <span class="badge-status-completed">Completed</span>
+              {% elif b.status == 'declined' %}
+                <span class="badge-status-declined">Declined</span>
+              {% elif b.status == 'cancelled' %}
+                <span class="badge-status-cancelled">Cancelled</span>
+              {% endif %}
+            </td>
+            <td>
+              <div style="display: flex; align-items: center; gap: 0.4rem;">
+                <a href="{% url 'provider_job_detail' b.id %}" class="btn btn-outline btn-sm" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;">View</a>
+
+                {% if b.status == 'pending' %}
+                  <form action="{% url 'provider_job_accept' b.id %}" method="POST" style="margin: 0;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-primary btn-sm" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;">Accept</button>
+                  </form>
+                  <form action="{% url 'provider_job_decline' b.id %}" method="POST" style="margin: 0;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-ghost btn-sm" style="padding: 0.35rem 0.65rem; font-size: 0.8rem; color: #DC2626;">Decline</button>
+                  </form>
+                {% elif b.status == 'accepted' %}
+                  <form action="{% url 'provider_job_complete' b.id %}" method="POST" style="margin: 0;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-dark btn-sm" style="padding: 0.35rem 0.75rem; font-size: 0.8rem; background: #10B981; border-color: #10B981;">Complete</button>
+                  </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="dashboard-card" style="text-align: center; padding: 3.5rem 1.5rem; color: #94A3B8;">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 1rem;"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
+    <h3 style="font-size: 1.15rem; font-weight: 700; color: #1E293B; margin-bottom: 0.35rem;">No jobs found</h3>
+    <p style="font-size: 0.9rem; margin-bottom: 1.5rem;">There are currently no records matching the '{{ status_filter|title }}' status filter.</p>
+    <a href="{% url 'provider_jobs' %}?status=all" class="btn btn-outline btn-sm">Clear Status Filter</a>
+  </div>
+{% endif %}
+{% endblock %}

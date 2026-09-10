@@ -1,0 +1,139 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ category.name }} Services – Servora Marketplace{% endblock %}
+
+{% block extra_css %}
+  <link rel="stylesheet" href="{% static 'css/customer.css' %}">
+{% endblock %}
+
+{% block content %}
+<!-- ================= CATEGORY HERO BANNER ================= -->
+<section class="catalog-hero">
+  <div class="container">
+    <div class="detail-breadcrumb">
+      <a href="{% url 'home' %}">Home</a>
+      <span>/</span>
+      <a href="{% url 'service_list' %}">Services</a>
+      <span>/</span>
+      <span>{{ category.name }}</span>
+    </div>
+
+    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 24px;">
+      <div style="max-width: 680px;">
+        <div style="display: flex; align-items: center; gap: 14px; margin-bottom: 12px;">
+          <div class="category-icon" style="width: 50px; height: 50px; font-size: 1.5rem; background: #FFFFFF;">
+            {% if category.icon_name == 'spark' %}✨
+            {% elif category.icon_name == 'zap' %}⚡
+            {% elif category.icon_name == 'wrench' %}🔧
+            {% elif category.icon_name == 'paint' %}🎨
+            {% elif category.icon_name == 'hammer' %}🔨
+            {% elif category.icon_name == 'leaf' %}🌿
+            {% elif category.icon_name == 'book' %}📚
+            {% elif category.icon_name == 'camera' %}📷
+            {% elif category.icon_name == 'cpu' %}💻
+            {% else %}🛠️{% endif %}
+          </div>
+          <h1 class="catalog-title" style="margin: 0;">{{ category.name }} Services</h1>
+        </div>
+        <p class="text-lead">{{ category.description|default:"Find trusted professionals for repairs, installations, and ongoing maintenance." }}</p>
+      </div>
+
+      <!-- Quick Category Stats -->
+      <div style="background: #FFFFFF; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 18px 24px; display: flex; gap: 28px; box-shadow: var(--shadow-sm);">
+        <div>
+          <span class="text-xs" style="color: var(--text-muted); text-transform: uppercase; font-weight: 700;">Services</span>
+          <div style="font-size: 1.6rem; font-weight: 800; color: var(--brand-dark);">{{ services|length }}</div>
+        </div>
+        <div style="border-left: 1px solid var(--border-subtle); padding-left: 28px;">
+          <span class="text-xs" style="color: var(--text-muted); text-transform: uppercase; font-weight: 700;">Verified Partners</span>
+          <div style="font-size: 1.6rem; font-weight: 800; color: var(--accent-primary);">{{ provider_count }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SERVICES LIST ================= -->
+<section class="section" style="padding-top: 40px;">
+  <div class="container">
+    <!-- Sort & Filtering Toolbar -->
+    <div class="catalog-results-header">
+      <h3>Available in {{ category.name }}</h3>
+
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span class="text-xs text-bold" style="color: var(--text-muted); text-transform: uppercase;">Sort:</span>
+        <a href="?sort=recommended" class="btn btn-sm {% if sort_option == 'recommended' %}btn-dark{% else %}btn-outline{% endif %}">Recommended</a>
+        <a href="?sort=price_asc" class="btn btn-sm {% if sort_option == 'price_asc' %}btn-dark{% else %}btn-outline{% endif %}">Price: Low to High</a>
+        <a href="?sort=price_desc" class="btn btn-sm {% if sort_option == 'price_desc' %}btn-dark{% else %}btn-outline{% endif %}">Price: High to Low</a>
+      </div>
+    </div>
+
+    <!-- Service Grid -->
+    {% if services %}
+      <div class="provider-grid">
+        {% for service in services %}
+          <div class="service-card card-hover">
+            <div class="service-card-body">
+              <div class="service-card-badge-row">
+                <span class="badge" style="background: var(--bg-blue-tint); color: #2563EB;">{{ category.name }}</span>
+                {% if service.is_featured %}
+                  <span class="badge badge-pro">Featured</span>
+                {% endif %}
+              </div>
+
+              <!-- Provider Info -->
+              <div class="service-provider-info">
+                <a href="{% url 'provider_profile' service.provider.id %}" style="display: flex; align-items: center; gap: 12px;">
+                  <div class="hero-visual-avatar" style="width: 42px; height: 42px; font-size: 0.95rem;">
+                    {{ service.provider.user.first_name|default:service.provider.user.username|slice:":2"|upper }}
+                  </div>
+                  <div>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                      <strong style="font-size: 0.92rem; color: var(--brand-dark);">
+                        {{ service.provider.user.get_full_name|default:service.provider.user.username }}
+                      </strong>
+                      {% if service.provider.is_verified %}
+                        <span class="badge badge-verified" style="padding: 2px 6px; font-size: 0.7rem;">Verified</span>
+                      {% endif %}
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px; font-size: 0.78rem; color: var(--text-secondary);">
+                      <span style="color: #F59E0B; font-weight: 700;">★ {{ service.average_rating }}</span>
+                      <span>({{ service.reviews_count }} reviews)</span>
+                      <span>&bull;</span>
+                      <span>📍 {{ service.location }}</span>
+                    </div>
+                  </div>
+                </a>
+              </div>
+
+              <h3 class="service-title">
+                <a href="{% url 'service_detail' service.id %}">{{ service.title }}</a>
+              </h3>
+              <p class="service-desc">{{ service.description }}</p>
+
+              <div class="service-meta">
+                <div class="service-price-block">
+                  <span class="service-price-label">Starting from</span>
+                  <span class="service-price">₹{{ service.price|floatformat:0 }}</span>
+                </div>
+                <div class="service-card-actions">
+                  <a href="{% url 'service_detail' service.id %}" class="btn btn-outline btn-sm">View Service</a>
+                  <a href="{% url 'book_service' service.id %}" class="btn btn-primary btn-sm">Book Now</a>
+                </div>
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <div class="empty-state-icon">🛠️</div>
+        <h3>No services in this category yet</h3>
+        <p>We are currently onboarding top verified professionals for {{ category.name }}. Check back soon or browse our other categories.</p>
+        <a href="{% url 'service_list' %}" class="btn btn-primary">Browse All Services</a>
+      </div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

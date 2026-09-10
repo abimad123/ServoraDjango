@@ -1,0 +1,1109 @@
+from django.shortcuts import render, get_object_or_404, redirect
+from django.urls import reverse
+from django.contrib import messages
+from django.http import JsonResponse, HttpResponse
+from django.db.models import Q, Avg, Count, Sum, F, OuterRef, Exists
+from .models import Category, Service, Booking, Review, FeaturedListing, RevenueTransaction
+from .forms import BookingCreateForm, ServiceForm
+from users.models import UserProfile, ProviderSubscription
+from users.forms import ProviderProfileForm
+from users.decorators import provider_required, admin_required
+from decimal import Decimal
+from datetime import datetime, date, time, timedelta
+
+
+def home_view(request):
+    """
+    Customer homepage rendering hero search bar, categories, and top services.
+    """
+    active_promo_subquery = FeaturedListing.objects.filter(
+        service=OuterRef('pk'),
+        is_active=True,
+        end_date__gte=date.today()
+    )
+    categories = Category.objects.all()[:10]
+    featured_services = Service.objects.filter(is_active=True).annotate(
+        has_active_promo=Exists(active_promo_subquery)
+    ).select_related('provider', 'category', 'provider__user').order_by('-has_active_promo', '-is_featured', '-created_at')[:6]
+    return render(request, 'services/home.html', {
+        'categories': categories,
+        'featured_services': featured_services,
+    })
+
+
+def service_list_view(request):
+    """
+    Complete service catalog supporting multi-field search and flexible filtering.
+    Accepts: search / q, location, category, min_price, max_price, min_rating, sort.
+    """
+    services = Service.objects.filter(is_active=True).select_related('provider', 'category', 'provider__user').prefetch_related('reviews')
+
+    # Search Query
+    search_query = request.GET.get('search') or request.GET.get('q') or ''
+    if search_query.strip():
+        q_term = search_query.strip()
+        services = services.filter(
+            Q(title__icontains=q_term) |
+            Q(description__icontains=q_term) |
+            Q(category__name__icontains=q_term) |
+            Q(location__icontains=q_term) |
+            Q(provider__user__first_name__icontains=q_term) |
+            Q(provider__user__last_name__icontains=q_term)
+        )
+
+    # Filter: Location
+    location_filter = request.GET.get('location', '').strip()
+    if location_filter:
+        services = services.filter(location__icontains=location_filter)
+
+    # Filter: Category (slug or name)
+    category_filter = request.GET.get('category', '').strip()
+    if category_filter and category_filter.lower() != 'all':
+        services = services.filter(
+            Q(category__name__iexact=category_filter) | Q(category__slug__iexact=category_filter)
+        )
+
+    # Filter: Minimum Price
+    min_price = request.GET.get('min_price', '').strip()
+    if min_price:
+        try:
+            services = services.filter(price__gte=Decimal(min_price))
+        except (ValueError, ArithmeticError):
+            pass
+
+    # Filter: Maximum Price
+    max_price = request.GET.get('max_price', '').strip()
+    if max_price:
+        try:
+            services = services.filter(price__lte=Decimal(max_price))
+        except (ValueError, ArithmeticError):
+            pass
+
+    # Filter: Minimum Star Rating
+    min_rating = request.GET.get('min_rating', '').strip()
+    if min_rating:
+        try:
+            rating_val = float(min_rating)
+            # Filter services where average review rating >= min_rating or if no reviews, consider default 5.0
+            matching_ids = [s.id for s in services if s.average_rating >= rating_val]
+            services = services.filter(id__in=matching_ids)
+        except ValueError:
+            pass
+
+    # Sorting with dynamic active featured promotions priority
+    active_promo_subquery = FeaturedListing.objects.filter(
+        service=OuterRef('pk'),
+        is_active=True,
+        end_date__gte=date.today()
+    )
+    services = services.annotate(has_active_promo=Exists(active_promo_subquery))
+
+    sort_option = request.GET.get('sort', 'recommended')
+    if sort_option == 'price_asc':
+        services = services.order_by('price')
+    elif sort_option == 'price_desc':
+        services = services.order_by('-price')
+    elif sort_option == 'newest':
+        services = services.order_by('-created_at')
+    else:
+        # Default: Recommended (Active promotions or is_featured first, then recent)
+        services = services.order_by('-has_active_promo', '-is_featured', '-created_at')
+
+    # Context helpers for filter dropdowns
+    categories = Category.objects.all()
+    available_locations = Service.objects.filter(is_active=True).values_list('location', flat=True).distinct()
+
+    return render(request, 'services/service_list.html', {
+        'services': services,
+        'categories': categories,
+        'available_locations': available_locations,
+        'search_query': search_query,
+        'location_filter': location_filter,
+        'category_filter': category_filter,
+        'min_price': min_price,
+        'max_price': max_price,
+        'min_rating': min_rating,
+        'sort_option': sort_option,
+        'total_count': services.count(),
+    })
+
+
+def category_services_view(request, name):
+    """
+    Dedicated category page displaying curated services for a specific category.
+    Supports academic <str:name> converter.
+    """
+    category = get_object_or_404(Category, Q(name__iexact=name) | Q(slug__iexact=name))
+    services = Service.objects.filter(category=category, is_active=True).select_related('provider', 'category', 'provider__user').prefetch_related('reviews')
+
+    # Optional sorting
+    sort_option = request.GET.get('sort', 'recommended')
+    if sort_option == 'price_asc':
+        services = services.order_by('price')
+    elif sort_option == 'price_desc':
+        services = services.order_by('-price')
+    elif sort_option == 'rating':
+        # Python sort or order by reviews count
+        services = sorted(services, key=lambda s: s.average_rating, reverse=True)
+    else:
+        services = services.order_by('-is_featured', '-created_at')
+
+    provider_count = Category.objects.filter(id=category.id).aggregate(
+        count=Count('services__provider', distinct=True)
+    )['count'] or 0
+
+    return render(request, 'services/category_services.html', {
+        'category': category,
+        'services': services,
+        'provider_count': provider_count,
+        'sort_option': sort_option,
+    })
+
+
+def service_detail_view(request, id):
+    """
+    Rich service detail page with provider summary, reviews, and booking CTA.
+    Supports academic <int:id> converter.
+    """
+    service = get_object_or_404(
+        Service.objects.select_related('provider', 'category', 'provider__user'),
+        id=id,
+        is_active=True
+    )
+    reviews = service.reviews.select_related('customer').order_by('-created_at')
+    other_services = Service.objects.filter(
+        provider=service.provider,
+        is_active=True
+    ).exclude(id=service.id)[:3]
+
+    return render(request, 'services/service_detail.html', {
+        'service': service,
+        'reviews': reviews,
+        'other_services': other_services,
+    })
+
+
+def service_slug_detail_view(request, slug):
+    """
+    Service detail view accessible via SEO-friendly URL slug.
+    Supports academic <slug:slug> converter.
+    """
+    service = get_object_or_404(
+        Service.objects.select_related('provider', 'category', 'provider__user'),
+        slug=slug,
+        is_active=True
+    )
+    reviews = service.reviews.select_related('customer').order_by('-created_at')
+    other_services = Service.objects.filter(
+        provider=service.provider,
+        is_active=True
+    ).exclude(id=service.id)[:3]
+
+    return render(request, 'services/service_detail.html', {
+        'service': service,
+        'reviews': reviews,
+        'other_services': other_services,
+    })
+
+
+def provider_profile_view(request, id):
+    """
+    Customer-facing public profile for a verified service provider.
+    Displays provider bio, credentials, completed jobs, reviews, and all offered services.
+    """
+    provider = get_object_or_404(
+        UserProfile.objects.select_related('user'),
+        id=id,
+        role='provider'
+    )
+    services = provider.services.filter(is_active=True).select_related('category')
+    reviews = Review.objects.filter(service__provider=provider).select_related('customer', 'service').order_by('-created_at')[:8]
+
+    return render(request, 'services/provider_profile.html', {
+        'provider': provider,
+        'services': services,
+        'reviews': reviews,
+        'completed_jobs': provider.completed_jobs_count,
+        'average_rating': provider.average_rating,
+        'total_reviews': provider.total_reviews_count,
+    })
+
+
+def search_view(request):
+    """
+    Handles GET /search/ requests by seamlessly delegating to service_list_view.
+    """
+    return service_list_view(request)
+
+
+def book_service_view(request, service_id):
+    """
+    Multi-step booking flow (Service & Provider -> Date & Time -> Details -> Confirm).
+    Guarded so only authenticated customers can book.
+    """
+    service = get_object_or_404(
+        Service.objects.select_related('provider', 'category', 'provider__user'),
+        id=service_id,
+        is_active=True
+    )
+
+    # 1. Unauthenticated users are redirected to login with ?next=
+    if not request.user.is_authenticated:
+        messages.info(request, "Please log in to your customer account to book this service.")
+        return redirect(f"{reverse('login')}?next={request.path}")
+
+    # 2. Providers cannot create customer bookings
+    if hasattr(request.user, 'profile') and request.user.profile.is_provider:
+        messages.error(request, "Service provider accounts cannot place bookings. Please log in with a homeowner/customer account.")
+        return redirect('service_detail', id=service.id)
+
+    # Time slot groupings for UI
+    morning_slots = [
+        ('09:00:00', '9:00 AM'), ('09:30:00', '9:30 AM'),
+        ('10:00:00', '10:00 AM'), ('10:30:00', '10:30 AM'),
+        ('11:00:00', '11:00 AM')
+    ]
+    afternoon_slots = [
+        ('13:00:00', '1:00 PM'), ('13:30:00', '1:30 PM'),
+        ('14:00:00', '2:00 PM'), ('14:30:00', '2:30 PM'),
+        ('15:00:00', '3:00 PM')
+    ]
+    evening_slots = [
+        ('17:00:00', '5:00 PM'), ('17:30:00', '5:30 PM'),
+        ('18:00:00', '6:00 PM'), ('18:30:00', '6:30 PM'),
+        ('19:00:00', '7:00 PM')
+    ]
+
+    if request.method == 'POST':
+        form = BookingCreateForm(request.POST, service=service)
+        if form.is_valid():
+            booking = Booking(
+                service=service,
+                customer=request.user,
+                booking_date=form.cleaned_data['booking_date'],
+                booking_time=form.cleaned_data['booking_time'],
+                address=form.cleaned_data['address'],
+                notes=form.cleaned_data.get('notes', ''),
+                total_amount=service.price,
+                commission_rate=Decimal('10.00'),
+                status='pending'
+            )
+            # Automatically calculates 10% commission on save
+            booking.save()
+            messages.success(request, f"Booking request #{booking.id} created successfully!")
+            return redirect('booking_success', booking_id=booking.id)
+        else:
+            for field, errors in form.errors.items():
+                for error in errors:
+                    messages.error(request, error)
+    else:
+        # Pre-fill address from customer profile if available
+        initial_data = {}
+        if hasattr(request.user, 'profile') and request.user.profile.address:
+            initial_data['address'] = request.user.profile.address
+        form = BookingCreateForm(service=service, initial=initial_data)
+
+    return render(request, 'services/booking.html', {
+        'service': service,
+        'form': form,
+        'morning_slots': morning_slots,
+        'afternoon_slots': afternoon_slots,
+        'evening_slots': evening_slots,
+    })
+
+
+def booking_success_view(request, booking_id):
+    """
+    Booking confirmation screen showing receipt ticket and scheduled details.
+    """
+    if not request.user.is_authenticated:
+        return redirect('login')
+
+    booking = get_object_or_404(
+        Booking.objects.select_related('service', 'service__provider', 'service__provider__user', 'service__category'),
+        id=booking_id
+    )
+
+    # Security check: Only customer or provider can view
+    if booking.customer != request.user and booking.service.provider.user != request.user:
+        return render(request, '404.html', status=404)
+
+    return render(request, 'services/booking_success.html', {
+        'booking': booking,
+    })
+
+
+def my_bookings_view(request):
+    """
+    Customer portal displaying all historical and active bookings placed by the logged-in customer.
+    """
+    if not request.user.is_authenticated:
+        messages.info(request, "Please log in to view your bookings.")
+        return redirect('login')
+
+    bookings = Booking.objects.filter(customer=request.user).select_related(
+        'service', 'service__provider', 'service__provider__user', 'service__category'
+    ).order_by('-created_at')
+
+    return render(request, 'services/my_bookings.html', {
+        'bookings': bookings,
+        'total_bookings': bookings.count(),
+    })
+
+
+def booking_detail_view(request, booking_id):
+    """
+    Detailed receipt and status page for an individual booking.
+    Guarded so users can only view their own bookings.
+    """
+    if not request.user.is_authenticated:
+        return redirect('login')
+
+    booking = get_object_or_404(
+        Booking.objects.select_related('service', 'service__provider', 'service__provider__user', 'service__category'),
+        id=booking_id
+    )
+
+    # Security: Only owner customer or recipient provider can view
+    is_customer_owner = (booking.customer == request.user)
+    is_provider_recipient = (booking.service.provider.user == request.user)
+
+    if not (is_customer_owner or is_provider_recipient or request.user.is_staff):
+        return render(request, '404.html', status=404)
+
+    return render(request, 'services/booking_detail.html', {
+        'booking': booking,
+        'is_customer_owner': is_customer_owner,
+    })
+
+
+def cancel_booking_view(request, booking_id):
+    """
+    Allows a customer to cancel a pending booking via POST request.
+    Frees up the slot for future bookings.
+    """
+    if not request.user.is_authenticated:
+        return redirect('login')
+
+    if request.method != 'POST':
+        messages.error(request, "Invalid request method.")
+        return redirect('my_bookings')
+
+    booking = get_object_or_404(Booking, id=booking_id, customer=request.user)
+
+    if booking.status != 'pending':
+        messages.warning(request, f"Booking #{booking.id} cannot be cancelled because it is already {booking.get_status_display()}.")
+        return redirect('booking_detail', booking_id=booking.id)
+
+    booking.status = 'cancelled'
+    booking.save()
+    messages.success(request, f"Booking #{booking.id} has been cancelled successfully. The time slot is now open.")
+    return redirect('my_bookings')
+
+
+def provider_bookings_view(request):
+    """
+    Basic provider booking visibility list (Stage 4 baseline).
+    """
+    if not request.user.is_authenticated:
+        return redirect('login')
+
+    if not hasattr(request.user, 'profile') or not request.user.profile.is_provider:
+        messages.error(request, "Access restricted to service providers.")
+        return redirect('home')
+
+    bookings = Booking.objects.filter(service__provider=request.user.profile).select_related(
+        'service', 'customer'
+    ).order_by('-created_at')
+
+    return render(request, 'services/provider_bookings.html', {
+        'bookings': bookings,
+        'total_bookings': bookings.count(),
+    })
+
+
+def api_availability_view(request):
+    """
+    Returns JSON list of booked time slots for a specific service and date.
+    Protects against double-bookings in real-time on the client side.
+    """
+    service_id = request.GET.get('service_id')
+    date_str = request.GET.get('date')
+
+    if not service_id or not date_str:
+        return JsonResponse({'booked_slots': []})
+
+    try:
+        parsed_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return JsonResponse({'booked_slots': []})
+
+    booked_times = Booking.objects.filter(
+        service_id=service_id,
+        booking_date=parsed_date,
+        status__in=['pending', 'accepted']
+    ).values_list('booking_time', flat=True)
+
+    formatted_slots = [t.strftime('%H:%M:%S') for t in booked_times]
+    return JsonResponse({'booked_slots': formatted_slots})
+
+
+@provider_required
+def provider_dashboard_view(request):
+    """
+    Main provider workspace featuring 4 real-time KPI metrics, pending job requests,
+    and upcoming schedule snippets.
+    """
+    provider = request.user.profile
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())
+    month_start = today.replace(day=1)
+
+    completed_bookings = Booking.objects.filter(
+        service__provider=provider,
+        status='completed'
+    )
+
+    today_earnings = completed_bookings.filter(booking_date=today).aggregate(
+        earn=Sum(F('total_amount') - F('commission_amount'))
+    )['earn'] or Decimal('0.00')
+
+    week_earnings = completed_bookings.filter(booking_date__gte=week_start).aggregate(
+        earn=Sum(F('total_amount') - F('commission_amount'))
+    )['earn'] or Decimal('0.00')
+
+    month_earnings = completed_bookings.filter(booking_date__gte=month_start).aggregate(
+        earn=Sum(F('total_amount') - F('commission_amount'))
+    )['earn'] or Decimal('0.00')
+
+    completed_jobs_count = completed_bookings.count()
+
+    pending_requests = Booking.objects.filter(
+        service__provider=provider,
+        status='pending'
+    ).select_related('service', 'customer').order_by('-created_at')[:5]
+
+    upcoming_jobs = Booking.objects.filter(
+        service__provider=provider,
+        status='accepted',
+        booking_date__gte=today
+    ).select_related('service', 'customer').order_by('booking_date', 'booking_time')[:5]
+
+    total_services_count = Service.objects.filter(provider=provider, is_active=True).count()
+
+    return render(request, 'provider/dashboard.html', {
+        'provider': provider,
+        'today_earnings': today_earnings,
+        'week_earnings': week_earnings,
+        'month_earnings': month_earnings,
+        'completed_jobs_count': completed_jobs_count,
+        'pending_requests': pending_requests,
+        'upcoming_jobs': upcoming_jobs,
+        'total_services_count': total_services_count,
+        'active_tab': 'dashboard',
+    })
+
+
+@provider_required
+def provider_jobs_view(request):
+    """
+    Job requests & appointments manager with database filtering by status.
+    """
+    provider = request.user.profile
+    status_filter = request.GET.get('status', 'all').lower()
+
+    all_provider_bookings = Booking.objects.filter(
+        service__provider=provider
+    ).select_related('service', 'customer', 'customer__profile')
+
+    all_count = all_provider_bookings.count()
+    pending_count = all_provider_bookings.filter(status='pending').count()
+    accepted_count = all_provider_bookings.filter(status='accepted').count()
+    completed_count = all_provider_bookings.filter(status='completed').count()
+    declined_count = all_provider_bookings.filter(status='declined').count()
+    cancelled_count = all_provider_bookings.filter(status='cancelled').count()
+
+    if status_filter in ['pending', 'accepted', 'completed', 'declined', 'cancelled']:
+        bookings = all_provider_bookings.filter(status=status_filter).order_by('-created_at')
+    else:
+        status_filter = 'all'
+        bookings = all_provider_bookings.order_by('-created_at')
+
+    return render(request, 'provider/jobs.html', {
+        'bookings': bookings,
+        'status_filter': status_filter,
+        'all_count': all_count,
+        'pending_count': pending_count,
+        'accepted_count': accepted_count,
+        'completed_count': completed_count,
+        'declined_count': declined_count,
+        'cancelled_count': cancelled_count,
+        'active_tab': 'jobs',
+    })
+
+
+@provider_required
+def provider_job_detail_view(request, booking_id):
+    """
+    Comprehensive job request inspector with customer details and status action triggers.
+    """
+    provider = request.user.profile
+    booking = get_object_or_404(
+        Booking.objects.select_related('service', 'customer', 'customer__profile', 'service__category'),
+        id=booking_id,
+        service__provider=provider
+    )
+    provider_earning = booking.total_amount - booking.commission_amount
+
+    return render(request, 'provider/job_detail.html', {
+        'booking': booking,
+        'provider_earning': provider_earning,
+        'active_tab': 'jobs',
+    })
+
+
+@provider_required
+def provider_job_accept_view(request, booking_id):
+    """
+    POST action: Accepts a pending booking request (status -> accepted).
+    """
+    if request.method != 'POST':
+        messages.error(request, "Invalid request method.")
+        return redirect('provider_jobs')
+
+    provider = request.user.profile
+    booking = get_object_or_404(Booking, id=booking_id, service__provider=provider)
+
+    if booking.status != 'pending':
+        messages.error(request, f"Cannot accept Job #{booking.id} because it is currently {booking.get_status_display()}.")
+        return redirect('provider_job_detail', booking_id=booking.id)
+
+    booking.status = 'accepted'
+    booking.save()
+    messages.success(request, f"Job #{booking.id} accepted successfully! It is now scheduled in your calendar.")
+    return redirect('provider_job_detail', booking_id=booking.id)
+
+
+@provider_required
+def provider_job_decline_view(request, booking_id):
+    """
+    POST action: Declines a pending booking request (status -> declined).
+    Releases the time slot so another customer can book.
+    """
+    if request.method != 'POST':
+        messages.error(request, "Invalid request method.")
+        return redirect('provider_jobs')
+
+    provider = request.user.profile
+    booking = get_object_or_404(Booking, id=booking_id, service__provider=provider)
+
+    if booking.status != 'pending':
+        messages.error(request, f"Cannot decline Job #{booking.id} because it is currently {booking.get_status_display()}.")
+        return redirect('provider_job_detail', booking_id=booking.id)
+
+    booking.status = 'declined'
+    booking.save()
+    messages.info(request, f"Job #{booking.id} has been declined. The appointment time slot has been freed.")
+    return redirect('provider_job_detail', booking_id=booking.id)
+
+
+@provider_required
+def provider_job_complete_view(request, booking_id):
+    """
+    POST action: Marks an accepted job as completed (status -> completed).
+    Updates provider earnings.
+    """
+    if request.method != 'POST':
+        messages.error(request, "Invalid request method.")
+        return redirect('provider_jobs')
+
+    provider = request.user.profile
+    booking = get_object_or_404(Booking, id=booking_id, service__provider=provider)
+
+    if booking.status != 'accepted':
+        messages.error(request, f"Cannot complete Job #{booking.id} because only accepted jobs can be completed.")
+        return redirect('provider_job_detail', booking_id=booking.id)
+
+    booking.status = 'completed'
+    booking.save()
+    provider_earning = booking.total_amount - booking.commission_amount
+
+    # Automatically and idempotently capture 10% platform commission revenue
+    RevenueTransaction.objects.get_or_create(
+        revenue_type='commission',
+        booking=booking,
+        defaults={
+            'provider': booking.service.provider,
+            'amount': booking.commission_amount,
+            'description': f"10% Platform Commission on Booking #SVR{booking.id:05d} ({booking.service.title})",
+            'status': 'completed',
+        }
+    )
+
+    messages.success(request, f"Job #{booking.id} marked as Completed! ₹{provider_earning} has been added to your earnings ledger.")
+    return redirect('provider_job_detail', booking_id=booking.id)
+
+
+@provider_required
+def provider_services_view(request):
+    """
+    Service listings catalog managed by the logged-in provider.
+    """
+    provider = request.user.profile
+    services = Service.objects.filter(provider=provider).select_related('category').prefetch_related('featured_promotions').annotate(
+        bookings_count=Count('bookings')
+    ).order_by('-created_at')
+
+    return render(request, 'provider/services.html', {
+        'services': services,
+        'total_count': services.count(),
+        'active_tab': 'services',
+    })
+
+
+@provider_required
+def provider_service_create_view(request):
+    """
+    Creates a new service listing owned by the logged-in provider.
+    """
+    provider = request.user.profile
+
+    if request.method == 'POST':
+        form = ServiceForm(request.POST, request.FILES)
+        if form.is_valid():
+            service = form.save(commit=False)
+            service.provider = provider
+            service.save()
+            messages.success(request, f"Service '{service.title}' created and published successfully!")
+            return redirect('provider_services')
+        else:
+            messages.error(request, "Please correct the errors below to publish your service.")
+    else:
+        form = ServiceForm(initial={'location': provider.city})
+
+    return render(request, 'provider/service_form.html', {
+        'form': form,
+        'page_title': 'Add New Service Listing',
+        'submit_label': 'Publish Service',
+        'active_tab': 'services',
+    })
+
+
+@provider_required
+def provider_service_edit_view(request, id):
+    """
+    Edits an existing service offering owned by the provider.
+    """
+    provider = request.user.profile
+    service = get_object_or_404(Service, id=id, provider=provider)
+
+    if request.method == 'POST':
+        form = ServiceForm(request.POST, request.FILES, instance=service)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f"Service '{service.title}' updated successfully!")
+            return redirect('provider_services')
+        else:
+            messages.error(request, "Please correct the form errors below.")
+    else:
+        form = ServiceForm(instance=service)
+
+    return render(request, 'provider/service_form.html', {
+        'form': form,
+        'service': service,
+        'page_title': f"Edit '{service.title}'",
+        'submit_label': 'Save Changes',
+        'active_tab': 'services',
+    })
+
+
+@provider_required
+def provider_service_delete_view(request, id):
+    """
+    Deletes or deactivates a service owned by the provider with safeguards for active bookings.
+    """
+    provider = request.user.profile
+    service = get_object_or_404(Service, id=id, provider=provider)
+
+    active_bookings_count = service.bookings.filter(status__in=['pending', 'accepted']).count()
+    total_bookings_count = service.bookings.count()
+
+    if request.method == 'POST':
+        if active_bookings_count > 0:
+            messages.error(
+                request,
+                f"Cannot delete '{service.title}' because it has {active_bookings_count} active (pending or accepted) job(s). Please resolve those bookings first."
+            )
+            return redirect('provider_services')
+
+        if total_bookings_count > 0:
+            # Safely archive / deactivate to preserve historical booking records
+            service.is_active = False
+            service.save()
+            messages.info(request, f"Service '{service.title}' has {total_bookings_count} past bookings and was safely deactivated/archived from the marketplace.")
+        else:
+            service.delete()
+            messages.success(request, f"Service '{service.title}' was permanently deleted.")
+
+        return redirect('provider_services')
+
+    return render(request, 'provider/service_confirm_delete.html', {
+        'service': service,
+        'active_bookings_count': active_bookings_count,
+        'total_bookings_count': total_bookings_count,
+        'active_tab': 'services',
+    })
+
+
+@provider_required
+def provider_schedule_view(request):
+    """
+    Calendar and chronological day-by-day appointment timeline.
+    """
+    provider = request.user.profile
+    today = date.today()
+
+    bookings = Booking.objects.filter(
+        service__provider=provider,
+        status__in=['pending', 'accepted'],
+        booking_date__gte=today
+    ).select_related('service', 'customer', 'customer__profile').order_by('booking_date', 'booking_time')
+
+    # Group bookings by date
+    grouped_schedule = {}
+    for b in bookings:
+        if b.booking_date not in grouped_schedule:
+            grouped_schedule[b.booking_date] = []
+        grouped_schedule[b.booking_date].append(b)
+
+    # Convert to sorted list of (date, list_of_bookings)
+    schedule_days = sorted(grouped_schedule.items(), key=lambda x: x[0])
+
+    return render(request, 'provider/schedule.html', {
+        'schedule_days': schedule_days,
+        'total_scheduled': bookings.count(),
+        'today': today,
+        'active_tab': 'schedule',
+    })
+
+
+@provider_required
+def provider_earnings_view(request):
+    """
+    Earnings analytics with 4 metric cards, weekly visual bar chart, and completed booking ledger.
+    """
+    provider = request.user.profile
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())
+    month_start = today.replace(day=1)
+
+    completed_bookings = Booking.objects.filter(
+        service__provider=provider,
+        status='completed'
+    ).select_related('service', 'customer').order_by('-booking_date', '-booking_time')
+
+    total_earnings = completed_bookings.aggregate(
+        earn=Sum(F('total_amount') - F('commission_amount'))
+    )['earn'] or Decimal('0.00')
+
+    month_earnings = completed_bookings.filter(booking_date__gte=month_start).aggregate(
+        earn=Sum(F('total_amount') - F('commission_amount'))
+    )['earn'] or Decimal('0.00')
+
+    week_earnings = completed_bookings.filter(booking_date__gte=week_start).aggregate(
+        earn=Sum(F('total_amount') - F('commission_amount'))
+    )['earn'] or Decimal('0.00')
+
+    completed_jobs_count = completed_bookings.count()
+
+    # Build weekly chart data (Monday to Sunday)
+    day_labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    weekly_bars = []
+    max_day_earning = Decimal('1.00')
+
+    for i in range(7):
+        day_date = week_start + timedelta(days=i)
+        day_earn = completed_bookings.filter(booking_date=day_date).aggregate(
+            earn=Sum(F('total_amount') - F('commission_amount'))
+        )['earn'] or Decimal('0.00')
+        if day_earn > max_day_earning:
+            max_day_earning = day_earn
+        weekly_bars.append({
+            'day_name': day_labels[i],
+            'date': day_date,
+            'earning': day_earn,
+            'is_today': (day_date == today),
+        })
+
+    for bar in weekly_bars:
+        bar['height_percent'] = int((bar['earning'] / max_day_earning) * 100) if max_day_earning > 0 else 0
+
+    return render(request, 'provider/earnings.html', {
+        'total_earnings': total_earnings,
+        'month_earnings': month_earnings,
+        'week_earnings': week_earnings,
+        'completed_jobs_count': completed_jobs_count,
+        'weekly_bars': weekly_bars,
+        'completed_bookings': completed_bookings,
+        'active_tab': 'earnings',
+    })
+
+
+@provider_required
+def provider_profile_settings_view(request):
+    """
+    Provider profile settings & credentials editor.
+    """
+    profile = request.user.profile
+
+    if request.method == 'POST':
+        form = ProviderProfileForm(request.POST, request.FILES, instance=profile)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Your professional profile has been updated successfully!")
+            return redirect('provider_profile_settings')
+        else:
+            messages.error(request, "Please correct the errors in the profile form.")
+    else:
+        form = ProviderProfileForm(instance=profile)
+
+    return render(request, 'provider/profile.html', {
+        'form': form,
+        'profile': profile,
+        'active_tab': 'profile',
+    })
+
+
+@provider_required
+def provider_subscription_view(request):
+    """
+    Allows service providers to view subscription tiers (Free vs Pro at ₹399/month)
+    and upgrade with simulated instant checkout.
+    """
+    provider = request.user.profile
+    current_sub = ProviderSubscription.objects.filter(provider=provider, is_active=True).order_by('-id').first()
+    is_pro = bool(current_sub and current_sub.plan_name == 'pro')
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'upgrade_pro':
+            end_date = date.today() + timedelta(days=30)
+            sub, _ = ProviderSubscription.objects.get_or_create(
+                provider=provider,
+                is_active=True,
+                defaults={
+                    'plan_name': 'pro',
+                    'monthly_fee': Decimal('399.00'),
+                    'end_date': end_date,
+                }
+            )
+            sub.plan_name = 'pro'
+            sub.monthly_fee = Decimal('399.00')
+            sub.end_date = end_date
+            sub.is_active = True
+            sub.save()
+
+            # Record simulated platform revenue transaction
+            RevenueTransaction.objects.create(
+                revenue_type='subscription',
+                amount=Decimal('399.00'),
+                provider=provider,
+                description=f"Pro Plan Monthly Subscription (₹399/mo) for {request.user.get_full_name() or request.user.username}",
+                status='completed'
+            )
+            messages.success(request, "Congratulations! You have successfully upgraded to the Pro Plan for ₹399/month. Your verified Pro badge and priority placement are now active.")
+            return redirect('provider_subscription')
+
+    return render(request, 'provider/subscription.html', {
+        'provider': provider,
+        'current_sub': current_sub,
+        'is_pro': is_pro,
+        'active_tab': 'subscription',
+    })
+
+
+@provider_required
+def provider_feature_service_view(request, service_id):
+    """
+    Promote a service listing as Featured for ₹99 (3 days).
+    Provides top-ranking search placement on customer marketplace.
+    """
+    provider = request.user.profile
+    service = get_object_or_404(Service, id=service_id, provider=provider)
+
+    active_promo = service.featured_promotions.filter(is_active=True, end_date__gte=date.today()).order_by('-end_date').first()
+
+    if request.method == 'POST':
+        end_date = date.today() + timedelta(days=3)
+        FeaturedListing.objects.create(
+            service=service,
+            fee_paid=Decimal('99.00'),
+            end_date=end_date,
+            is_active=True
+        )
+        service.is_featured = True
+        service.save(update_fields=['is_featured'])
+
+        # Record simulated platform revenue transaction
+        RevenueTransaction.objects.create(
+            revenue_type='featured',
+            amount=Decimal('99.00'),
+            provider=provider,
+            service=service,
+            description=f"3-Day Featured Promotion for '{service.title}' (₹99)",
+            status='completed'
+        )
+        messages.success(request, f"Success! '{service.title}' is now featured on the marketplace for the next 3 days (until {end_date.strftime('%d %b %Y')}).")
+        return redirect('provider_services')
+
+    return render(request, 'provider/feature_service.html', {
+        'service': service,
+        'active_promo': active_promo,
+        'active_tab': 'services',
+    })
+
+
+@admin_required
+def platform_revenue_dashboard_view(request):
+    """
+    Executive platform revenue dashboard for administrators.
+    Displays total platform revenue, 4 live KPI cards, 3 revenue stream breakdown cards,
+    weekly visual chart, and top 10 recent transactions.
+    """
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())
+    month_start = today.replace(day=1)
+
+    completed_tx = RevenueTransaction.objects.filter(status='completed')
+
+    total_revenue = completed_tx.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+    today_revenue = completed_tx.filter(created_at__date=today).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+    week_revenue = completed_tx.filter(created_at__date__gte=week_start).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+    month_revenue = completed_tx.filter(created_at__date__gte=month_start).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+
+    # Stream breakdown
+    commission_revenue = completed_tx.filter(revenue_type='commission').aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+    subscription_revenue = completed_tx.filter(revenue_type='subscription').aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+    featured_revenue = completed_tx.filter(revenue_type='featured').aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+
+    commission_count = completed_tx.filter(revenue_type='commission').count()
+    subscription_count = completed_tx.filter(revenue_type='subscription').count()
+    featured_count = completed_tx.filter(revenue_type='featured').count()
+    total_transactions_count = completed_tx.count()
+
+    # Weekly chart: Mon-Sun daily revenue
+    day_labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    weekly_chart = []
+    max_day_rev = Decimal('1.00')
+    for i in range(7):
+        day_date = week_start + timedelta(days=i)
+        day_rev = completed_tx.filter(created_at__date=day_date).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        if day_rev > max_day_rev:
+            max_day_rev = day_rev
+        weekly_chart.append({
+            'day_name': day_labels[i],
+            'date': day_date,
+            'revenue': day_rev,
+            'is_today': (day_date == today),
+        })
+
+    for bar in weekly_chart:
+        bar['height_percent'] = int((bar['revenue'] / max_day_rev) * 100) if max_day_rev > 0 else 0
+
+    recent_transactions = completed_tx.select_related(
+        'provider', 'provider__user', 'booking', 'service'
+    ).order_by('-created_at')[:10]
+
+    return render(request, 'platform/revenue_dashboard.html', {
+        'total_revenue': total_revenue,
+        'today_revenue': today_revenue,
+        'week_revenue': week_revenue,
+        'month_revenue': month_revenue,
+        'commission_revenue': commission_revenue,
+        'subscription_revenue': subscription_revenue,
+        'featured_revenue': featured_revenue,
+        'commission_count': commission_count,
+        'subscription_count': subscription_count,
+        'featured_count': featured_count,
+        'total_transactions_count': total_transactions_count,
+        'weekly_chart': weekly_chart,
+        'recent_transactions': recent_transactions,
+        'active_tab': 'overview',
+    })
+
+
+@admin_required
+def platform_revenue_transactions_view(request):
+    """
+    Dedicated financial transaction ledger with type and status filtering.
+    """
+    type_filter = request.GET.get('type', 'all').lower()
+    status_filter = request.GET.get('status', 'all').lower()
+
+    transactions = RevenueTransaction.objects.all().select_related(
+        'provider', 'provider__user', 'booking', 'service'
+    ).order_by('-created_at')
+
+    if type_filter in ['commission', 'subscription', 'featured']:
+        transactions = transactions.filter(revenue_type=type_filter)
+    else:
+        type_filter = 'all'
+
+    if status_filter in ['completed', 'pending', 'failed']:
+        transactions = transactions.filter(status=status_filter)
+    else:
+        status_filter = 'all'
+
+    all_tx = RevenueTransaction.objects.all()
+    all_count = all_tx.count()
+    commission_count = all_tx.filter(revenue_type='commission').count()
+    subscription_count = all_tx.filter(revenue_type='subscription').count()
+    featured_count = all_tx.filter(revenue_type='featured').count()
+
+    total_filtered_sum = transactions.filter(status='completed').aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+
+    return render(request, 'platform/transactions.html', {
+        'transactions': transactions,
+        'type_filter': type_filter,
+        'status_filter': status_filter,
+        'all_count': all_count,
+        'commission_count': commission_count,
+        'subscription_count': subscription_count,
+        'featured_count': featured_count,
+        'total_filtered_sum': total_filtered_sum,
+        'active_tab': 'transactions',
+    })
+
+
+
+
+def api_services_list(request):
+    """
+    JSON response endpoint returning database service information.
+    Fulfills the academic JSON response requirement.
+    """
+    services = list(Service.objects.filter(is_active=True).values('id', 'title', 'price', 'location'))
+    return JsonResponse({'services': services, 'count': len(services)})
+
+
+def archive_bookings_view(request, year, month):
+    """
+    Archive view accessed via regex re_path URL converter.
+    Fulfills the academic re_path requirement.
+    """
+    bookings = Booking.objects.filter(booking_date__year=year, booking_date__month=month)
+    return HttpResponse(f"Archived bookings for {year}-{month}: {bookings.count()} found.")
+
+
+def custom_404_view(request, exception=None):
+    """
+    Branded 404 error page matching the Servora luxury design system.
+    """
+    return render(request, '404.html', status=404)
+
+
+def custom_500_view(request):
+    """
+    Branded 500 server error page matching the Servora luxury design system.
+    """
+    return render(request, '500.html', status=500)

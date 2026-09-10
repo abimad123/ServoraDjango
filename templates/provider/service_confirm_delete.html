@@ -1,0 +1,57 @@
+{% extends "provider/base_provider.html" %}
+
+{% block title %}Delete Service – Servora Workspace{% endblock %}
+
+{% block provider_content %}
+<div class="provider-topbar">
+  <div>
+    <a href="{% url 'provider_services' %}" style="font-size: 0.85rem; font-weight: 700; color: #0D6EFD; text-decoration: none; display: inline-flex; align-items: center; gap: 0.35rem; margin-bottom: 0.5rem;">
+      &larr; Back to Services List
+    </a>
+    <div class="provider-greeting">
+      <h1>Delete Service Listing</h1>
+      <p>Confirm the removal of '{{ service.title }}'.</p>
+    </div>
+  </div>
+</div>
+
+<div class="danger-confirm-card">
+  {% if active_bookings_count > 0 %}
+    <div style="color: #DC2626; font-size: 1.1rem; font-weight: 800; margin-bottom: 0.75rem;">
+      ⚠️ Cannot Delete: Active Bookings Exist
+    </div>
+    <p style="color: #475569; font-size: 0.95rem; line-height: 1.6; margin-bottom: 1.5rem;">
+      This service currently has <strong>{{ active_bookings_count }} active booking(s)</strong> (pending or accepted). To protect clients and avoid breaking customer appointments, you must either complete or resolve these active jobs before deleting the service.
+    </p>
+    <a href="{% url 'provider_jobs' %}?status=pending" class="btn btn-outline">
+      View Active Bookings
+    </a>
+  {% else %}
+    <div style="color: #DC2626; font-size: 1.2rem; font-weight: 800; margin-bottom: 0.75rem;">
+      Confirm Service Deletion
+    </div>
+
+    {% if total_bookings_count > 0 %}
+      <p style="color: #475569; font-size: 0.95rem; line-height: 1.6; margin-bottom: 1.5rem;">
+        The service <strong>"{{ service.title }}"</strong> has {{ total_bookings_count }} completed or past booking records. To preserve historical invoice records for your clients and tax records, this service will be <strong>archived and deactivated</strong> from the public marketplace.
+      </p>
+    {% else %}
+      <p style="color: #475569; font-size: 0.95rem; line-height: 1.6; margin-bottom: 1.5rem;">
+        Are you sure you want to permanently delete <strong>"{{ service.title }}"</strong>? This action cannot be reversed.
+      </p>
+    {% endif %}
+
+    <form method="POST">
+      {% csrf_token %}
+      <div style="display: flex; align-items: center; gap: 1rem;">
+        <button type="submit" class="btn btn-primary" style="background: #DC2626; border-color: #DC2626;">
+          Confirm & Delete Service
+        </button>
+        <a href="{% url 'provider_services' %}" class="btn btn-ghost">
+          Cancel
+        </a>
+      </div>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,77 @@
+{% extends "provider/base_provider.html" %}
+
+{% block title %}Schedule & Timeline – Servora Workspace{% endblock %}
+
+{% block provider_content %}
+<div class="provider-topbar">
+  <div class="provider-greeting">
+    <h1>Service Appointment Schedule</h1>
+    <p>Upcoming accepted and pending customer appointments arranged chronologically.</p>
+  </div>
+  <div class="provider-topbar-actions">
+    <span class="badge badge-verified" style="font-size: 0.85rem; padding: 6px 12px;">
+      {{ total_scheduled }} Upcoming Job{{ total_scheduled|pluralize }}
+    </span>
+  </div>
+</div>
+
+{% if schedule_days %}
+  <div style="max-width: 900px;">
+    {% for day_date, day_bookings in schedule_days %}
+      <div class="schedule-group">
+        <div class="schedule-date-header">
+          <div class="schedule-date-pill">
+            {{ day_date|date:"D, d M Y" }}
+          </div>
+          <div class="schedule-day-label">
+            {% if day_date == today %}
+              (Today's Appointments)
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="schedule-timeline-cards">
+          {% for b in day_bookings %}
+            <div class="schedule-card" style="{% if b.status == 'pending' %}border-left-color: #FF5A36;{% endif %}">
+              <div class="schedule-time-box">
+                ⏰ {{ b.booking_time|time:"g:i A" }}
+              </div>
+
+              <div class="schedule-main-info">
+                <div class="schedule-service-title">
+                  {{ b.service.title }}
+                </div>
+                <div class="schedule-customer-address">
+                  👤 {{ b.customer.get_full_name|default:b.customer.username }}
+                  {% if b.customer.profile.phone %}• 📞 {{ b.customer.profile.phone }}{% endif %}
+                  {% if b.address %}• 📍 {{ b.address|truncatechars:50 }}{% endif %}
+                </div>
+              </div>
+
+              <div style="display: flex; align-items: center; gap: 0.75rem;">
+                {% if b.status == 'pending' %}
+                  <span class="badge-status-pending">Pending</span>
+                {% elif b.status == 'accepted' %}
+                  <span class="badge-status-accepted">Accepted</span>
+                {% endif %}
+                <a href="{% url 'provider_job_detail' b.id %}" class="btn btn-outline btn-sm" style="padding: 0.35rem 0.8rem; font-size: 0.8rem;">
+                  View
+                </a>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="dashboard-card" style="text-align: center; padding: 4rem 1.5rem; max-width: 800px;">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 1rem; color: #94A3B8;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+    <h3 style="font-size: 1.2rem; font-weight: 800; color: #1E293B; margin-bottom: 0.35rem;">No upcoming appointments scheduled</h3>
+    <p style="font-size: 0.92rem; color: #64748B; margin-bottom: 1.5rem;">When customers book your services and requests are accepted, they will be organized here by date.</p>
+    <a href="{% url 'provider_jobs' %}?status=pending" class="btn btn-primary">
+      Review Pending Requests
+    </a>
+  </div>
+{% endif %}
+{% endblock %}

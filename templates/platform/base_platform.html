@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block extra_css %}
+  <link rel="stylesheet" href="{% static 'css/provider.css' %}">
+  <style>
+    .platform-banner {
+      background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+      color: #FFFFFF;
+      padding: 1.25rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 2px solid #334155;
+    }
+    .platform-title-group {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .platform-badge {
+      background: rgba(255, 90, 54, 0.2);
+      color: #FF5A36;
+      border: 1px solid rgba(255, 90, 54, 0.4);
+      padding: 3px 10px;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .platform-nav-links {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .platform-nav-link {
+      padding: 0.5rem 1rem;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #94A3B8;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+    .platform-nav-link:hover {
+      color: #FFFFFF;
+      background: rgba(255, 255, 255, 0.08);
+    }
+    .platform-nav-link.active {
+      color: #FFFFFF;
+      background: #FF5A36;
+    }
+    .platform-container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 4rem;
+    }
+    .stream-breakdown-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    .stream-card {
+      background: #FFFFFF;
+      border: 1px solid var(--border-color, #E2E8F0);
+      border-radius: 20px;
+      padding: 1.75rem;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.03);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .stream-card-border-coral { border-top: 4px solid #FF5A36; }
+    .stream-card-border-blue { border-top: 4px solid #0D6EFD; }
+    .stream-card-border-purple { border-top: 4px solid #8B5CF6; }
+    .stream-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1rem;
+    }
+    .stream-title {
+      font-size: 0.85rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted, #64748B);
+    }
+    .stream-amount {
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--text-dark, #1E293B);
+      letter-spacing: -0.02em;
+      margin-bottom: 0.5rem;
+    }
+    .stream-meta {
+      font-size: 0.82rem;
+      color: var(--text-muted, #64748B);
+      line-height: 1.5;
+    }
+    @media (max-width: 1024px) {
+      .stream-breakdown-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+<!-- Executive Platform Bar -->
+<div class="platform-banner">
+  <div class="platform-title-group">
+    <span class="platform-badge">Administrator Console</span>
+    <span style="font-size: 1.15rem; font-weight: 800; letter-spacing: -0.01em;">Servora Platform Monetization</span>
+  </div>
+
+  <nav class="platform-nav-links">
+    <a href="{% url 'platform_revenue' %}" class="platform-nav-link {% if active_tab == 'overview' %}active{% endif %}">
+      Revenue Overview
+    </a>
+    <a href="{% url 'platform_revenue_transactions' %}" class="platform-nav-link {% if active_tab == 'transactions' %}active{% endif %}">
+      Transaction Ledger
+    </a>
+    <a href="{% url 'home' %}" class="platform-nav-link" target="_blank">
+      Public Marketplace &rarr;
+    </a>
+  </nav>
+</div>
+
+<div class="platform-container">
+  {% block platform_content %}{% endblock %}
+</div>
+{% endblock %}

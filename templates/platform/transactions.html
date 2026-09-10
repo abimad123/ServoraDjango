@@ -1,0 +1,131 @@
+{% extends "platform/base_platform.html" %}
+
+{% block title %}Platform Financial Ledger | Servora Monetization{% endblock %}
+
+{% block platform_content %}
+<div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
+  <div>
+    <h1 style="font-size: 2rem; font-weight: 800; color: #1E293B; letter-spacing: -0.03em; margin: 0 0 0.5rem;">
+      Financial Ledger & Transactions
+    </h1>
+    <p style="color: #64748B; margin: 0; font-size: 0.95rem;">
+      Full audit trail of all realized platform commissions, Pro subscriptions, and featured promotions.
+    </p>
+  </div>
+
+  <div style="background: #FFFFFF; border: 1px solid #E2E8F0; padding: 0.75rem 1.25rem; border-radius: 14px; text-align: right; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
+    <div style="font-size: 0.75rem; font-weight: 800; text-transform: uppercase; color: #64748B; letter-spacing: 0.05em;">Filtered Total</div>
+    <div style="font-size: 1.5rem; font-weight: 800; color: #10B981;">₹{{ total_filtered_sum|floatformat:2 }}</div>
+  </div>
+</div>
+
+<!-- Type Filter Tabs -->
+<div style="display: flex; gap: 0.75rem; margin-bottom: 1.5rem; flex-wrap: wrap; align-items: center;">
+  <span style="font-size: 0.85rem; font-weight: 700; color: #64748B; margin-right: 0.25rem;">Type:</span>
+  <a href="?type=all{% if status_filter != 'all' %}&status={{ status_filter }}{% endif %}"
+     style="padding: 0.45rem 1rem; border-radius: 9999px; font-size: 0.82rem; font-weight: 700; text-decoration: none; transition: all 0.2s; {% if type_filter == 'all' %}background: #0F172A; color: #FFFFFF;{% else %}background: #FFFFFF; color: #64748B; border: 1px solid #CBD5E1;{% endif %}">
+    All Types ({{ all_count }})
+  </a>
+  <a href="?type=commission{% if status_filter != 'all' %}&status={{ status_filter }}{% endif %}"
+     style="padding: 0.45rem 1rem; border-radius: 9999px; font-size: 0.82rem; font-weight: 700; text-decoration: none; transition: all 0.2s; {% if type_filter == 'commission' %}background: #FF5A36; color: #FFFFFF;{% else %}background: #FFFFFF; color: #64748B; border: 1px solid #CBD5E1;{% endif %}">
+    Commissions ({{ commission_count }})
+  </a>
+  <a href="?type=subscription{% if status_filter != 'all' %}&status={{ status_filter }}{% endif %}"
+     style="padding: 0.45rem 1rem; border-radius: 9999px; font-size: 0.82rem; font-weight: 700; text-decoration: none; transition: all 0.2s; {% if type_filter == 'subscription' %}background: #0D6EFD; color: #FFFFFF;{% else %}background: #FFFFFF; color: #64748B; border: 1px solid #CBD5E1;{% endif %}">
+    Pro Subscriptions ({{ subscription_count }})
+  </a>
+  <a href="?type=featured{% if status_filter != 'all' %}&status={{ status_filter }}{% endif %}"
+     style="padding: 0.45rem 1rem; border-radius: 9999px; font-size: 0.82rem; font-weight: 700; text-decoration: none; transition: all 0.2s; {% if type_filter == 'featured' %}background: #8B5CF6; color: #FFFFFF;{% else %}background: #FFFFFF; color: #64748B; border: 1px solid #CBD5E1;{% endif %}">
+    Featured Listings ({{ featured_count }})
+  </a>
+</div>
+
+<!-- Ledger Card -->
+<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 20px; overflow: hidden; box-shadow: 0 4px 14px rgba(0,0,0,0.03);">
+  {% if transactions %}
+    <div style="overflow-x: auto;">
+      <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
+        <thead>
+          <tr style="background: #F8FAFC; border-bottom: 2px solid #E2E8F0;">
+            <th style="padding: 1rem 1.25rem; font-weight: 800; color: #475569; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em;">Date & Time</th>
+            <th style="padding: 1rem 1.25rem; font-weight: 800; color: #475569; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em;">Revenue Stream</th>
+            <th style="padding: 1rem 1.25rem; font-weight: 800; color: #475569; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em;">Provider</th>
+            <th style="padding: 1rem 1.25rem; font-weight: 800; color: #475569; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em;">Description & Reference</th>
+            <th style="padding: 1rem 1.25rem; font-weight: 800; color: #475569; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em;">Amount</th>
+            <th style="padding: 1rem 1.25rem; font-weight: 800; color: #475569; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for tx in transactions %}
+            <tr style="border-bottom: 1px solid #F1F5F9; transition: background 0.15s ease;">
+              <td style="padding: 1.1rem 1.25rem; color: #64748B; font-weight: 600; font-size: 0.85rem; white-space: nowrap;">
+                {{ tx.created_at|date:"M d, Y" }}
+                <div style="font-size: 0.75rem; color: #94A3B8; font-weight: 500;">{{ tx.created_at|date:"h:i A" }}</div>
+              </td>
+              <td style="padding: 1.1rem 1.25rem;">
+                {% if tx.revenue_type == 'commission' %}
+                  <span style="background: rgba(255, 90, 54, 0.1); color: #FF5A36; font-size: 0.75rem; font-weight: 800; padding: 4px 10px; border-radius: 9999px; display: inline-block;">
+                    Booking Commission
+                  </span>
+                {% elif tx.revenue_type == 'subscription' %}
+                  <span style="background: rgba(13, 110, 253, 0.1); color: #0D6EFD; font-size: 0.75rem; font-weight: 800; padding: 4px 10px; border-radius: 9999px; display: inline-block;">
+                    Pro Subscription
+                  </span>
+                {% elif tx.revenue_type == 'featured' %}
+                  <span style="background: rgba(139, 92, 246, 0.1); color: #8B5CF6; font-size: 0.75rem; font-weight: 800; padding: 4px 10px; border-radius: 9999px; display: inline-block;">
+                    Featured Listing
+                  </span>
+                {% endif %}
+              </td>
+              <td style="padding: 1.1rem 1.25rem;">
+                <div style="font-weight: 700; color: #1E293B;">
+                  {{ tx.provider.user.get_full_name|default:tx.provider.user.username }}
+                </div>
+                <div style="font-size: 0.78rem; color: #64748B;">{{ tx.provider.business_name|default:tx.provider.city }}</div>
+              </td>
+              <td style="padding: 1.1rem 1.25rem; max-width: 320px;">
+                <div style="font-weight: 600; color: #334155;">{{ tx.description }}</div>
+                {% if tx.booking %}
+                  <div style="font-size: 0.75rem; color: #FF5A36; font-weight: 700; margin-top: 2px;">
+                    Job Ref: #SVR{{ tx.booking.id|stringformat:"05d" }} (Gross: ₹{{ tx.booking.total_amount }})
+                  </div>
+                {% elif tx.service %}
+                  <div style="font-size: 0.75rem; color: #8B5CF6; font-weight: 700; margin-top: 2px;">
+                    Service: {{ tx.service.title }}
+                  </div>
+                {% endif %}
+              </td>
+              <td style="padding: 1.1rem 1.25rem; font-weight: 800; color: #10B981; font-size: 1.05rem; white-space: nowrap;">
+                +₹{{ tx.amount|floatformat:2 }}
+              </td>
+              <td style="padding: 1.1rem 1.25rem; white-space: nowrap;">
+                {% if tx.status == 'completed' %}
+                  <span style="background: rgba(16, 185, 129, 0.1); color: #10B981; font-size: 0.75rem; font-weight: 800; padding: 4px 10px; border-radius: 9999px;">
+                    Completed
+                  </span>
+                {% elif tx.status == 'pending' %}
+                  <span style="background: rgba(245, 158, 11, 0.1); color: #F59E0B; font-size: 0.75rem; font-weight: 800; padding: 4px 10px; border-radius: 9999px;">
+                    Pending
+                  </span>
+                {% else %}
+                  <span style="background: rgba(239, 68, 68, 0.1); color: #EF4444; font-size: 0.75rem; font-weight: 800; padding: 4px 10px; border-radius: 9999px;">
+                    Failed
+                  </span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div style="text-align: center; padding: 4rem 2rem;">
+      <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">🧾</div>
+      <h3 style="font-size: 1.2rem; font-weight: 800; color: #1E293B; margin-bottom: 0.5rem;">No Transactions Found</h3>
+      <p style="color: #64748B; max-width: 420px; margin: 0 auto; font-size: 0.9rem;">
+        No financial transactions match the current filter selection. Completed bookings, pro upgrades, and featured promotions will appear here automatically.
+      </p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

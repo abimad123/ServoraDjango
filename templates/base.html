@@ -1,0 +1,147 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Servora – Find Trusted Local Home Service Professionals{% endblock %}</title>
+  <meta name="description" content="{% block meta_description %}Discover and book reliable, verified local home service providers for plumbing, electrical, cleaning, painting and repairs with transparent pricing.{% endblock %}">
+
+  <!-- Core Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Design System CSS -->
+  <link rel="stylesheet" href="{% static 'css/main.css' %}">
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+
+  <!-- ================= TOP NAVIGATION ================= -->
+  <header class="navbar">
+    <div class="container navbar-inner">
+      <a href="{% url 'home' %}" class="logo">
+        <span>Servora</span><span class="logo-dot"></span>
+      </a>
+
+      <!-- Desktop Links -->
+      <nav class="nav-links">
+        <a href="{% url 'home' %}" class="nav-link {% if request.resolver_match.url_name == 'home' %}active{% endif %}">Home</a>
+        <a href="{% url 'service_list' %}" class="nav-link {% if request.resolver_match.url_name == 'service_list' %}active{% endif %}">Services</a>
+        <a href="{% url 'home' %}#how-it-works" class="nav-link">How It Works</a>
+        <a href="{% url 'home' %}#faq" class="nav-link">FAQ</a>
+        {% if not user.is_authenticated or not user.profile.is_provider %}
+          <a href="{% url 'register' %}?role=provider" class="nav-link">Become a Provider</a>
+        {% endif %}
+      </nav>
+
+      <!-- User Auth State -->
+      <div class="nav-actions">
+        {% if user.is_authenticated %}
+          {% if user.is_staff or user.is_superuser %}
+            <a href="{% url 'platform_revenue' %}" class="btn btn-sm" style="background: #0F172A; color: #FFFFFF; border: 1px solid #334155; font-weight: 700;">
+              Platform Revenue
+            </a>
+          {% endif %}
+          {% if user.profile.is_provider %}
+            <a href="{% url 'provider_dashboard' %}" class="btn btn-dark btn-sm">
+              <span>Dashboard</span>
+              {% if user.profile.is_verified %}<span class="badge badge-verified" style="padding: 2px 6px; font-size: 0.7rem;">Verified</span>{% endif %}
+            </a>
+          {% else %}
+            <a href="{% url 'my_bookings' %}" class="btn btn-outline btn-sm">My Bookings</a>
+          {% endif %}
+          <a href="{% url 'logout' %}" class="btn btn-ghost btn-sm">Logout</a>
+        {% else %}
+          <a href="{% url 'login' %}" class="btn btn-ghost btn-sm">Login</a>
+          <a href="{% url 'register' %}" class="btn btn-primary btn-sm">Sign Up</a>
+        {% endif %}
+
+        <!-- Mobile Menu Trigger -->
+        <button class="mobile-menu-btn" aria-label="Toggle navigation menu" id="mobile-menu-toggle">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= FLASH MESSAGES ================= -->
+  {% if messages %}
+    <div class="container messages-container">
+      {% for message in messages %}
+        <div class="alert alert-{{ message.tags|default:'info' }}">
+          <span>{{ message }}</span>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <!-- ================= MAIN CONTENT ================= -->
+  <main class="main-content">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- ================= FOOTER ================= -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <a href="{% url 'home' %}" class="logo">
+            <span>Servora</span><span class="logo-dot"></span>
+          </a>
+          <p>India's trusted home-services marketplace connecting verified local professionals with homeowners. Safe, fast, and transparent.</p>
+        </div>
+
+        <div class="footer-col">
+          <h5>Services</h5>
+          <ul>
+            <li><a href="{% url 'service_list' %}?category=Plumbing">Plumbing Services</a></li>
+            <li><a href="{% url 'service_list' %}?category=Electrical">Electrical & Wiring</a></li>
+            <li><a href="{% url 'service_list' %}?category=Cleaning">Deep Home Cleaning</a></li>
+            <li><a href="{% url 'service_list' %}?category=Painting">Painting & Waterproofing</a></li>
+            <li><a href="{% url 'service_list' %}?category=Carpentry">Carpentry & Woodwork</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h5>For Customers</h5>
+          <ul>
+            <li><a href="{% url 'service_list' %}">Browse All Services</a></li>
+            <li><a href="{% url 'home' %}#how-it-works">How It Works</a></li>
+            <li><a href="{% url 'my_bookings' %}">Track My Bookings</a></li>
+            <li><a href="{% url 'home' %}#faq">Customer FAQs</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h5>For Providers</h5>
+          <ul>
+            <li><a href="{% url 'register' %}?role=provider">Join as Service Partner</a></li>
+            <li><a href="{% url 'provider_dashboard' %}">Provider Portal</a></li>
+            <li><a href="{% url 'provider_subscription' %}">Pro Membership (₹399)</a></li>
+            <li><a href="{% url 'provider_earnings' %}">Earnings & Commission</a></li>
+            <li><a href="{% url 'api_services_list' %}">Developer API (JSON)</a></li>
+            {% if user.is_staff or user.is_superuser %}
+              <li><a href="{% url 'platform_revenue' %}" style="color: #FF5A36; font-weight: 700;">Platform Revenue</a></li>
+            {% endif %}
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <p>&copy; 2026 Servora Marketplace Inc. All rights reserved.</p>
+        <p>Built with Django 5 & SQLite &bull; Academic Demonstration</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Core JavaScript -->
+  <script src="{% static 'js/main.js' %}"></script>
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

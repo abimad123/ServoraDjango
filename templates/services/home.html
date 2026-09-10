@@ -1,0 +1,265 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Servora – Find Trusted Local Home Service Professionals{% endblock %}
+
+{% block extra_css %}
+  <link rel="stylesheet" href="{% static 'css/customer.css' %}">
+{% endblock %}
+
+{% block content %}
+<!-- ================= HERO SECTION ================= -->
+<section class="hero-section">
+  <div class="container hero-grid">
+    <!-- Left Column: Value Prop & Multi-field Search Interface -->
+    <div class="hero-content">
+      <div class="hero-badge">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+        </svg>
+        <span>Verified Local Professionals &bull; Transparent Pricing</span>
+      </div>
+
+      <h1 class="hero-title">Find trusted professionals for your next home project.</h1>
+      <p class="hero-desc">Connect with skilled, background-verified plumbers, electricians, painters, and cleaners in your neighborhood with guaranteed satisfaction.</p>
+
+      <!-- Search Card Interface -->
+      <div class="search-card">
+        <form action="{% url 'service_list' %}" method="GET" class="search-form-grid">
+          <div class="search-field">
+            <span class="search-label">Location</span>
+            <input type="text" name="location" class="search-input" placeholder="e.g. Kannur, Kochi" value="{{ request.GET.location|default:'' }}">
+          </div>
+
+          <div class="search-field">
+            <span class="search-label">What service do you need?</span>
+            <input type="text" name="search" class="search-input" placeholder="e.g. Deep Cleaning, AC Repair" value="{{ request.GET.search|default:'' }}">
+          </div>
+
+          <div class="search-field">
+            <span class="search-label">Max Budget</span>
+            <input type="number" name="max_price" class="search-input" placeholder="₹ Any price" value="{{ request.GET.max_price|default:'' }}">
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-lg" style="height: 100%;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <span>Search</span>
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Right Column: Visual Trust & Highlight Card -->
+    <div class="hero-visual">
+      <div class="hero-visual-card">
+        <div class="hero-visual-header">
+          <div class="hero-visual-avatar">JM</div>
+          <div>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <h4 style="margin: 0;">John Mathew</h4>
+              <span class="badge badge-verified">Verified</span>
+            </div>
+            <p class="text-sm" style="margin: 0; color: var(--text-muted);">Master Plumber &bull; Kannur</p>
+          </div>
+        </div>
+
+        <div style="background: var(--bg-cool-gray); border-radius: var(--radius-md); padding: 16px; margin-bottom: 20px;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span class="text-xs text-bold" style="text-transform: uppercase; color: var(--text-muted);">Recent Completed Project</span>
+            <span class="badge badge-completed">Paid &bull; Completed</span>
+          </div>
+          <p class="text-sm" style="font-weight: 600; margin: 0; color: var(--text-primary);">Complete Bathroom Plumbing & Pipe Fitting</p>
+          <p class="text-xs" style="color: var(--text-secondary); margin-top: 4px;">"Arrived on time, fixed the leak in 45 mins. Exceptional service!"</p>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <span class="text-xs" style="color: var(--text-muted);">Customer Rating</span>
+            <div style="font-weight: 800; font-size: 1.15rem; color: var(--text-primary);">
+              4.9 <span style="color: #F59E0B;">★</span> <span class="text-xs" style="font-weight: normal; color: var(--text-muted);">(128 reviews)</span>
+            </div>
+          </div>
+          <a href="{% url 'service_list' %}" class="btn btn-outline btn-sm">Explore Services</a>
+        </div>
+
+        <!-- Floating Stat Pill -->
+        <div class="hero-stat-pill">
+          <div style="background: #ECFDF5; color: #059669; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.1rem;">
+            ✓
+          </div>
+          <div>
+            <div style="font-weight: 800; font-size: 1rem; color: var(--text-primary);">100% Guaranteed</div>
+            <div class="text-xs" style="color: var(--text-secondary);">Direct Provider Connection</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= EXPLORE SERVICES (CATEGORIES) ================= -->
+<section class="section" id="categories">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-subtitle">Explore Services</span>
+      <h2>What service can we help you with?</h2>
+      <p>Browse through our most requested home services delivered by verified specialists.</p>
+    </div>
+
+    <div class="category-grid">
+      {% for cat in categories %}
+        <a href="{% url 'category_services' cat.name %}" class="category-card">
+          <div class="category-icon">
+            {% if cat.icon_name == 'spark' %}✨
+            {% elif cat.icon_name == 'zap' %}⚡
+            {% elif cat.icon_name == 'wrench' %}🔧
+            {% elif cat.icon_name == 'paint' %}🎨
+            {% elif cat.icon_name == 'hammer' %}🔨
+            {% elif cat.icon_name == 'leaf' %}🌿
+            {% elif cat.icon_name == 'book' %}📚
+            {% elif cat.icon_name == 'camera' %}📷
+            {% elif cat.icon_name == 'cpu' %}💻
+            {% else %}🛠️{% endif %}
+          </div>
+          <div class="category-name">{{ cat.name }}</div>
+          <div class="category-count">{{ cat.services.count }} services available</div>
+        </a>
+      {% empty %}
+        <p class="text-sm" style="color: var(--text-muted);">No categories added yet.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<!-- ================= TOP PROVIDERS / FEATURED SERVICES ================= -->
+<section class="section" style="background: var(--bg-cool-gray); border-top: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle);">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-subtitle">Top Rated Services</span>
+      <h2>Popular home services near you</h2>
+      <p>Book directly with top-rated local professionals with proven work records.</p>
+    </div>
+
+    <div class="provider-grid">
+      {% for service in featured_services %}
+        <div class="service-card card-hover">
+          <div class="service-card-body">
+            <div class="service-provider-info">
+              <a href="{% url 'provider_profile' service.provider.id %}" style="display: flex; align-items: center; gap: 12px;">
+                <div class="hero-visual-avatar" style="width: 44px; height: 44px; font-size: 1rem;">
+                  {{ service.provider.user.first_name|default:service.provider.user.username|slice:":2"|upper }}
+                </div>
+                <div>
+                  <div style="display: flex; align-items: center; gap: 6px;">
+                    <strong style="font-size: 0.95rem; color: var(--brand-dark);">
+                      {{ service.provider.user.get_full_name|default:service.provider.user.username }}
+                    </strong>
+                    {% if service.provider.is_verified %}<span class="badge badge-verified">Verified</span>{% endif %}
+                  </div>
+                  <span class="text-xs" style="color: var(--text-secondary);">{{ service.location }} &bull; {{ service.category.name }}</span>
+                </div>
+              </a>
+            </div>
+
+            <h3 class="service-title">
+              <a href="{% url 'service_detail' service.id %}">{{ service.title }}</a>
+            </h3>
+            <p class="service-desc">{{ service.description }}</p>
+
+            <div class="service-meta">
+              <div class="service-price-block">
+                <span class="service-price-label">Starting from</span>
+                <span class="service-price">₹{{ service.price|floatformat:0 }}</span>
+              </div>
+              <div class="service-card-actions">
+                <a href="{% url 'service_detail' service.id %}" class="btn btn-outline btn-sm">View Service</a>
+                <a href="{% url 'book_service' service.id %}" class="btn btn-primary btn-sm">Book Now</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      {% empty %}
+        <p class="text-sm" style="color: var(--text-muted);">No services available at this time.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<!-- ================= HOW IT WORKS ================= -->
+<section class="section" id="how-it-works">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-subtitle">How It Works</span>
+      <h2>Getting service done is simple</h2>
+      <p>Book verified professionals in 4 simple steps with zero upfront hassle.</p>
+    </div>
+
+    <div class="steps-grid">
+      <div class="step-card">
+        <div class="step-num">1</div>
+        <h4 class="step-title">Search</h4>
+        <p class="text-sm">Find professionals based on your location, needed service type, and budget.</p>
+      </div>
+
+      <div class="step-card">
+        <div class="step-num">2</div>
+        <h4 class="step-title">Compare</h4>
+        <p class="text-sm">Review transparent ratings, past project reviews, and transparent pricing cards.</p>
+      </div>
+
+      <div class="step-card">
+        <div class="step-num">3</div>
+        <h4 class="step-title">Book</h4>
+        <p class="text-sm">Select your convenient date and preferred time slot with instant request dispatch.</p>
+      </div>
+
+      <div class="step-card">
+        <div class="step-num">4</div>
+        <h4 class="step-title">Get Done</h4>
+        <p class="text-sm">The expert visits your location, completes the job cleanly, and you review their work.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FAQ SECTION ================= -->
+<section class="section" id="faq" style="background: #FFFFFF; border-top: 1px solid var(--border-subtle);">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-subtitle">Frequently Asked Questions</span>
+      <h2>Got questions? We've got answers.</h2>
+      <p>Everything you need to know about Servora's marketplace and booking workflow.</p>
+    </div>
+
+    <div class="faq-list">
+      <div class="faq-item">
+        <div class="faq-question">How does Servora work?</div>
+        <div class="faq-answer">Servora is a two-sided marketplace. Homeowners search for local services, compare verified providers based on transparent reviews and pricing, and book a suitable date and time slot directly on the platform.</div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">How are service providers verified?</div>
+        <div class="faq-answer">Providers undergo credential checks, skill verifications, and background identification. Verified partners receive a blue verification badge on their profile cards.</div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">Can I cancel or reschedule a booking?</div>
+        <div class="faq-answer">Yes, customers can view their active bookings under the "My Bookings" page and request cancellation or rescheduling before the provider arrives.</div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">How are prices determined?</div>
+        <div class="faq-answer">Each service provider sets transparent starting prices for their offerings. Final charges correspond directly to the scope agreed upon during the booking submission.</div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-question">How do I become a service provider?</div>
+        <div class="faq-answer">Click on "Become a Provider" in the top navigation, register your provider account, list your services with pricing, and immediately start receiving local booking requests.</div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

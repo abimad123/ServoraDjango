@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Page Not Found (404) – Servora{% endblock %}
+
+{% block content %}
+<section class="section" style="min-height: 60vh; display: flex; align-items: center;">
+  <div class="container" style="text-align: center; max-width: 620px;">
+    <div style="font-size: 5rem; font-weight: 800; color: var(--accent-primary); line-height: 1; margin-bottom: 16px;">
+      404
+    </div>
+    <h1 style="font-size: 2rem; margin-bottom: 16px;">Oops! Page or Service Not Found</h1>
+    <p class="text-lead" style="margin-bottom: 32px;">
+      The service, provider, or page you requested could not be located. It might have been removed, renamed, or is temporarily offline.
+    </p>
+
+    <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+      <a href="{% url 'home' %}" class="btn btn-primary">Back to Homepage</a>
+      <a href="{% url 'service_list' %}" class="btn btn-outline">Browse All Services</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

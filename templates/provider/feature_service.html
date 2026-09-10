@@ -1,0 +1,95 @@
+{% extends "provider/base_provider.html" %}
+
+{% block title %}Feature Service: {{ service.title }} | Servora Provider Workspace{% endblock %}
+
+{% block provider_content %}
+<div style="max-width: 680px; margin: 0 auto; padding-top: 1rem;">
+  <a href="{% url 'provider_services' %}" style="display: inline-flex; align-items: center; gap: 0.5rem; color: #64748B; font-weight: 700; font-size: 0.88rem; text-decoration: none; margin-bottom: 1.5rem;">
+    &larr; Back to My Services
+  </a>
+
+  <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 24px; padding: 2.5rem; box-shadow: 0 8px 24px rgba(0,0,0,0.04);">
+    <div style="text-align: center; margin-bottom: 2rem;">
+      <div style="width: 64px; height: 64px; border-radius: 20px; background: rgba(139, 92, 246, 0.1); color: #8B5CF6; display: inline-flex; align-items: center; justify-content: center; font-size: 2rem; margin-bottom: 1rem;">
+        ⚡
+      </div>
+      <h1 style="font-size: 1.75rem; font-weight: 800; color: #1E293B; letter-spacing: -0.02em; margin: 0 0 0.5rem;">
+        Feature Your Service
+      </h1>
+      <p style="color: #64748B; font-size: 0.95rem; margin: 0;">
+        Boost your service listing to the top of search results and customer feeds for 3 consecutive days.
+      </p>
+    </div>
+
+    <!-- Service Preview Summary -->
+    <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 16px; padding: 1.25rem 1.5rem; margin-bottom: 2rem;">
+      <div style="font-size: 0.75rem; font-weight: 800; text-transform: uppercase; color: #64748B; letter-spacing: 0.05em; margin-bottom: 0.25rem;">
+        Selected Service
+      </div>
+      <div style="font-size: 1.15rem; font-weight: 800; color: #1E293B; margin-bottom: 0.25rem;">
+        {{ service.title }}
+      </div>
+      <div style="font-size: 0.85rem; color: #64748B; display: flex; gap: 1rem; align-items: center;">
+        <span>Category: <strong>{{ service.category.name }}</strong></span>
+        <span>&bull;</span>
+        <span>Base Rate: <strong>₹{{ service.price }}</strong></span>
+        <span>&bull;</span>
+        <span>Location: <strong>{{ service.location }}</strong></span>
+      </div>
+    </div>
+
+    {% if active_promo %}
+      <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 14px; padding: 1rem 1.25rem; margin-bottom: 2rem; display: flex; align-items: center; gap: 0.75rem;">
+        <span style="color: #10B981; font-size: 1.25rem; font-weight: 800;">✓</span>
+        <div style="font-size: 0.88rem; color: #065F46;">
+          This service currently has an active promotion until <strong>{{ active_promo.end_date|date:"F d, Y" }}</strong>. Confirming below will extend or refresh your 3-day spotlight.
+        </div>
+      </div>
+    {% endif %}
+
+    <!-- Promotion Details Grid -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 2rem;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 16px; padding: 1.25rem; text-align: center;">
+        <div style="font-size: 0.78rem; font-weight: 800; text-transform: uppercase; color: #64748B; letter-spacing: 0.05em;">Duration</div>
+        <div style="font-size: 1.5rem; font-weight: 800; color: #1E293B; margin-top: 0.25rem;">3 Days</div>
+        <div style="font-size: 0.78rem; color: #64748B; margin-top: 2px;">Full 72-hour priority window</div>
+      </div>
+
+      <div style="border: 1px solid #8B5CF6; background: rgba(139, 92, 246, 0.03); border-radius: 16px; padding: 1.25rem; text-align: center;">
+        <div style="font-size: 0.78rem; font-weight: 800; text-transform: uppercase; color: #8B5CF6; letter-spacing: 0.05em;">Promotion Price</div>
+        <div style="font-size: 1.5rem; font-weight: 800; color: #8B5CF6; margin-top: 0.25rem;">₹99</div>
+        <div style="font-size: 0.78rem; color: #64748B; margin-top: 2px;">One-time flat fee</div>
+      </div>
+    </div>
+
+    <!-- Perks list -->
+    <div style="margin-bottom: 2.25rem;">
+      <h4 style="font-size: 0.9rem; font-weight: 800; color: #334155; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem;">
+        Included Promotion Benefits
+      </h4>
+      <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.6rem; font-size: 0.9rem; color: #475569;">
+        <li style="display: flex; align-items: center; gap: 0.6rem;">
+          <span style="color: #8B5CF6; font-weight: 800;">★</span> Featured badge displayed prominently on service cards
+        </li>
+        <li style="display: flex; align-items: center; gap: 0.6rem;">
+          <span style="color: #8B5CF6; font-weight: 800;">★</span> Priority sorting: appears before standard listings in category browsing
+        </li>
+        <li style="display: flex; align-items: center; gap: 0.6rem;">
+          <span style="color: #8B5CF6; font-weight: 800;">★</span> Top-spot rotation on the Servora customer homepage
+        </li>
+      </ul>
+    </div>
+
+    <!-- Confirmation Form -->
+    <form method="POST">
+      {% csrf_token %}
+      <button type="submit" style="width: 100%; padding: 1rem; border-radius: 14px; font-size: 1rem; font-weight: 800; background: #8B5CF6; color: #FFFFFF; border: none; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 14px rgba(139, 92, 246, 0.3);">
+        Confirm & Feature Service for ₹99
+      </button>
+      <div style="text-align: center; margin-top: 0.75rem; font-size: 0.78rem; color: #94A3B8;">
+        Academic demo: Simulated instant checkout (No card required)
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

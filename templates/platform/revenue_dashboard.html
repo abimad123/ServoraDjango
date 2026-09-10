@@ -1,0 +1,235 @@
+{% extends "platform/base_platform.html" %}
+
+{% block title %}Platform Revenue & Monetization – Servora Admin{% endblock %}
+
+{% block platform_content %}
+<!-- Header -->
+<div class="provider-topbar" style="margin-bottom: 2rem;">
+  <div class="provider-greeting">
+    <h1>Platform Revenue & Monetization Overview</h1>
+    <p>Live financial performance tracking across commissions, provider subscriptions, and promoted listings.</p>
+  </div>
+  <div class="provider-topbar-actions">
+    <a href="{% url 'platform_revenue_transactions' %}" class="btn btn-outline btn-sm">
+      <span>View Full Ledger ({{ total_transactions_count }})</span>
+    </a>
+  </div>
+</div>
+
+<!-- 4 KPI Statistic Cards -->
+<div class="provider-stats-grid">
+  <!-- Total Revenue -->
+  <div class="provider-stat-card">
+    <div class="stat-card-header">
+      <span class="stat-card-title">Total Platform Revenue</span>
+      <div class="stat-icon-wrapper stat-icon-coral">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+      </div>
+    </div>
+    <div class="stat-card-value">₹{{ total_revenue|floatformat:0 }}</div>
+    <div class="stat-card-footer">
+      <span class="stat-trend-positive">All Streams</span> (Realized & Settled)
+    </div>
+  </div>
+
+  <!-- Today's Revenue -->
+  <div class="provider-stat-card">
+    <div class="stat-card-header">
+      <span class="stat-card-title">Today's Revenue</span>
+      <div class="stat-icon-wrapper stat-icon-green">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+      </div>
+    </div>
+    <div class="stat-card-value">₹{{ today_revenue|floatformat:0 }}</div>
+    <div class="stat-card-footer">
+      <span>Transactions today</span>
+    </div>
+  </div>
+
+  <!-- This Week -->
+  <div class="provider-stat-card">
+    <div class="stat-card-header">
+      <span class="stat-card-title">This Week</span>
+      <div class="stat-icon-wrapper stat-icon-blue">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line></svg>
+      </div>
+    </div>
+    <div class="stat-card-value">₹{{ week_revenue|floatformat:0 }}</div>
+    <div class="stat-card-footer">
+      <span>Monday to Sunday cycle</span>
+    </div>
+  </div>
+
+  <!-- This Month -->
+  <div class="provider-stat-card">
+    <div class="stat-card-header">
+      <span class="stat-card-title">This Month</span>
+      <div class="stat-icon-wrapper stat-icon-purple">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+      </div>
+    </div>
+    <div class="stat-card-value">₹{{ month_revenue|floatformat:0 }}</div>
+    <div class="stat-card-footer">
+      <span>Current calendar month</span>
+    </div>
+  </div>
+</div>
+
+<!-- 3 Revenue Stream Breakdown Cards -->
+<h2 style="font-size: 1.3rem; font-weight: 800; color: #1E293B; margin-bottom: 1rem;">
+  Revenue Sources Breakdown
+</h2>
+
+<div class="stream-breakdown-grid">
+  <!-- Stream 1: Booking Commissions -->
+  <div class="stream-card stream-card-border-coral">
+    <div>
+      <div class="stream-header">
+        <span class="stream-title">Booking Commissions</span>
+        <span class="badge-status-completed" style="font-size: 0.72rem;">10% Fee</span>
+      </div>
+      <div class="stream-amount">₹{{ commission_revenue|floatformat:0 }}</div>
+      <div class="stream-meta">
+        Realized automatically on completed customer bookings. Pending and cancelled jobs do not contribute.
+      </div>
+    </div>
+    <div style="margin-top: 1.25rem; padding-top: 0.75rem; border-top: 1px solid #E2E8F0; font-size: 0.8rem; font-weight: 700; color: #64748B;">
+      📦 {{ commission_count }} Completed Commission{{ commission_count|pluralize }}
+    </div>
+  </div>
+
+  <!-- Stream 2: Provider Subscriptions -->
+  <div class="stream-card stream-card-border-blue">
+    <div>
+      <div class="stream-header">
+        <span class="stream-title">Pro Subscriptions</span>
+        <span class="badge-status-accepted" style="font-size: 0.72rem;">₹399 / month</span>
+      </div>
+      <div class="stream-amount">₹{{ subscription_revenue|floatformat:0 }}</div>
+      <div class="stream-meta">
+        Monthly memberships unlocking verified Pro badges, premium marketplace placement, and analytics.
+      </div>
+    </div>
+    <div style="margin-top: 1.25rem; padding-top: 0.75rem; border-top: 1px solid #E2E8F0; font-size: 0.8rem; font-weight: 700; color: #64748B;">
+      ⭐ {{ subscription_count }} Paid Subscription{{ subscription_count|pluralize }}
+    </div>
+  </div>
+
+  <!-- Stream 3: Featured Listings -->
+  <div class="stream-card stream-card-border-purple">
+    <div>
+      <div class="stream-header">
+        <span class="stream-title">Featured Listings</span>
+        <span class="badge-status-pending" style="font-size: 0.72rem;">₹99 / 3 Days</span>
+      </div>
+      <div class="stream-amount">₹{{ featured_revenue|floatformat:0 }}</div>
+      <div class="stream-meta">
+        Promotional boosts that place provider services at the top of category search results and recommended feeds.
+      </div>
+    </div>
+    <div style="margin-top: 1.25rem; padding-top: 0.75rem; border-top: 1px solid #E2E8F0; font-size: 0.8rem; font-weight: 700; color: #64748B;">
+      🚀 {{ featured_count }} Promoted Service{{ featured_count|pluralize }}
+    </div>
+  </div>
+</div>
+
+<!-- Weekly Revenue Chart -->
+<div class="chart-container-card">
+  <div class="chart-header">
+    <div>
+      <h3 style="font-size: 1.15rem; font-weight: 800; color: #1E293B; margin-bottom: 0.25rem;">
+        Weekly Platform Revenue Flow (Monday – Sunday)
+      </h3>
+      <p style="font-size: 0.85rem; color: #64748B; margin: 0;">
+        Daily gross monetization across all three platform revenue streams. Hover over bars to see daily totals.
+      </p>
+    </div>
+    <span style="font-size: 0.8rem; font-weight: 700; color: #FF5A36; background: #FFF7ED; padding: 4px 10px; border-radius: 9999px;">
+      Live ORM Aggregation
+    </span>
+  </div>
+
+  <div class="weekly-bars-wrapper">
+    {% for bar in weekly_bars %}
+      <div class="chart-col {% if bar.is_today %}is-today{% endif %}">
+        <div class="chart-bar {% if bar.revenue > 0 %}has-earnings{% endif %}" style="height: {{ bar.height_percent }}%;">
+          <div class="chart-bar-tooltip">
+            ₹{{ bar.revenue|floatformat:0 }}
+          </div>
+        </div>
+        <span class="chart-day-label">
+          {{ bar.day_name }}{% if bar.is_today %} •{% endif %}
+        </span>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Recent Transactions Ledger -->
+<div class="dashboard-card" style="margin-top: 2rem;">
+  <div class="dashboard-card-header">
+    <div class="dashboard-card-title">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0D6EFD" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
+      <span>Recent Revenue Transactions</span>
+    </div>
+    <a href="{% url 'platform_revenue_transactions' %}" class="view-all-link">
+      View All Transactions &rarr;
+    </a>
+  </div>
+
+  {% if recent_transactions %}
+    <div class="provider-table-wrapper" style="border: none;">
+      <table class="provider-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Type</th>
+            <th>Provider</th>
+            <th>Description / Reference</th>
+            <th>Platform Revenue</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for tx in recent_transactions %}
+            <tr>
+              <td>
+                <div style="font-weight: 600;">{{ tx.created_at|date:"d M Y" }}</div>
+                <div style="font-size: 0.75rem; color: #64748B;">{{ tx.created_at|time:"g:i A" }}</div>
+              </td>
+              <td>
+                {% if tx.revenue_type == 'commission' %}
+                  <span class="badge-status-completed" style="font-size: 0.75rem;">Commission</span>
+                {% elif tx.revenue_type == 'subscription' %}
+                  <span class="badge-status-accepted" style="font-size: 0.75rem;">Pro Sub</span>
+                {% elif tx.revenue_type == 'featured' %}
+                  <span class="badge-status-pending" style="font-size: 0.75rem;">Featured</span>
+                {% endif %}
+              </td>
+              <td>
+                <div style="font-weight: 700; color: #1E293B;">{{ tx.provider.user.get_full_name|default:tx.provider.user.username }}</div>
+                <div style="font-size: 0.75rem; color: #64748B;">📍 {{ tx.provider.city }}</div>
+              </td>
+              <td>
+                <div style="font-size: 0.88rem; color: #334155;">{{ tx.description }}</div>
+              </td>
+              <td>
+                <span style="font-size: 1.05rem; font-weight: 800; color: #10B981;">
+                  +₹{{ tx.amount|floatformat:0 }}
+                </span>
+              </td>
+              <td>
+                <span class="badge-status-completed">✓ Settled</span>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div style="text-align: center; padding: 3rem 1.5rem; color: #94A3B8;">
+      <p style="font-size: 0.95rem; font-weight: 600; margin: 0;">No revenue transactions recorded yet</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

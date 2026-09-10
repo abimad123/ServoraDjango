@@ -1,0 +1,119 @@
+{% extends "provider/base_provider.html" %}
+
+{% block title %}My Services – Servora Workspace{% endblock %}
+
+{% block provider_content %}
+<div class="provider-topbar">
+  <div class="provider-greeting">
+    <h1>My Service Listings</h1>
+    <p>Manage your published services, pricing, descriptions, and active status.</p>
+  </div>
+  <div class="provider-topbar-actions">
+    <a href="{% url 'provider_service_add' %}" class="btn btn-primary btn-sm">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+      <span>+ Add New Service</span>
+    </a>
+  </div>
+</div>
+
+{% if services %}
+  <div class="provider-table-wrapper">
+    <table class="provider-table">
+      <thead>
+        <tr>
+          <th>Service Title</th>
+          <th>Category</th>
+          <th>Starting Price</th>
+          <th>Bookings</th>
+          <th>Status</th>
+          <th>Promotion</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for svc in services %}
+          <tr>
+            <td>
+              <div style="font-weight: 700; color: #1E293B; font-size: 0.95rem;">
+                {{ svc.title }}
+              </div>
+              <div style="font-size: 0.78rem; color: #64748B;">
+                📍 {{ svc.location }} &bull; {{ svc.duration_estimate }}
+              </div>
+            </td>
+            <td>
+              <span style="background: #F0F4FD; color: #0D6EFD; font-size: 0.78rem; font-weight: 700; padding: 3px 8px; border-radius: 6px;">
+                {{ svc.category.name }}
+              </span>
+            </td>
+            <td>
+              <span style="font-size: 1rem; font-weight: 800; color: #1E293B;">
+                ₹{{ svc.price|floatformat:0 }}
+              </span>
+            </td>
+            <td>
+              <span style="font-weight: 700; color: #64748B;">
+                {{ svc.bookings_count }}
+              </span>
+            </td>
+            <td>
+              {% if svc.is_active %}
+                <span style="background: #ECFDF5; color: #065F46; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 9999px; border: 1px solid #A7F3D0;">
+                  ● Active
+                </span>
+              {% else %}
+                <span style="background: #F1F5F9; color: #64748B; font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 9999px; border: 1px solid #E2E8F0;">
+                  ○ Archived
+                </span>
+              {% endif %}
+            </td>
+            <td>
+              {% if svc.has_active_featured_listing %}
+                <div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-start;">
+                  <span style="background: rgba(139, 92, 246, 0.1); color: #8B5CF6; font-size: 0.75rem; font-weight: 800; padding: 3px 8px; border-radius: 9999px; border: 1px solid rgba(139, 92, 246, 0.3);">
+                    ★ Featured
+                  </span>
+                  <a href="{% url 'provider_feature_service' svc.id %}" style="font-size: 0.72rem; color: #8B5CF6; text-decoration: underline; font-weight: 700;">
+                    Extend (₹99)
+                  </a>
+                </div>
+              {% else %}
+                <div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-start;">
+                  <span style="color: #94A3B8; font-size: 0.75rem; font-weight: 600;">
+                    Not Featured
+                  </span>
+                  <a href="{% url 'provider_feature_service' svc.id %}" class="btn btn-sm" style="background: #8B5CF6; color: #FFFFFF; font-size: 0.75rem; padding: 3px 8px; border-radius: 6px; text-decoration: none; font-weight: 700; box-shadow: 0 2px 6px rgba(139, 92, 246, 0.25);">
+                    ⚡ Feature for ₹99
+                  </a>
+                </div>
+              {% endif %}
+            </td>
+            <td>
+              <div style="display: flex; align-items: center; gap: 0.4rem;">
+                <a href="{% url 'service_detail' svc.id %}" target="_blank" class="btn btn-ghost btn-sm" style="padding: 0.35rem 0.65rem; font-size: 0.8rem;" title="View on customer marketplace">
+                  View
+                </a>
+                <a href="{% url 'provider_service_edit' svc.id %}" class="btn btn-outline btn-sm" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;">
+                  Edit
+                </a>
+                <a href="{% url 'provider_service_delete' svc.id %}" class="btn btn-ghost btn-sm" style="padding: 0.35rem 0.65rem; font-size: 0.8rem; color: #DC2626;" title="Delete service">
+                  Delete
+                </a>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="dashboard-card" style="text-align: center; padding: 4rem 1.5rem;">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 1rem; color: #94A3B8;"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+    <h3 style="font-size: 1.2rem; font-weight: 800; color: #1E293B; margin-bottom: 0.35rem;">No services listed yet</h3>
+    <p style="font-size: 0.92rem; color: #64748B; margin-bottom: 1.5rem;">Create your first professional service offering to start receiving customer job bookings.</p>
+    <a href="{% url 'provider_service_add' %}" class="btn btn-primary">
+      <span>+ Add Your First Service</span>
+    </a>
+  </div>
+{% endif %}
+{% endblock %}

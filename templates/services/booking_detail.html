@@ -1,0 +1,138 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Booking #SVR{{ booking.id|stringformat:"05d" }} – Servora{% endblock %}
+
+{% block extra_css %}
+  <link rel="stylesheet" href="{% static 'css/customer.css' %}">
+  <link rel="stylesheet" href="{% static 'css/booking.css' %}">
+{% endblock %}
+
+{% block content %}
+<section class="section" style="padding: 40px 0 80px;">
+  <div class="container container-narrow">
+    <div class="detail-breadcrumb" style="margin-bottom: 24px;">
+      <a href="{% url 'home' %}">Home</a>
+      <span>/</span>
+      {% if is_customer_owner %}
+        <a href="{% url 'my_bookings' %}">My Bookings</a>
+      {% else %}
+        <a href="{% url 'provider_bookings' %}">Provider Bookings</a>
+      {% endif %}
+      <span>/</span>
+      <span>#SVR{{ booking.id|stringformat:"05d" }}</span>
+    </div>
+
+    <div class="card" style="padding: 36px;">
+      <!-- Header -->
+      <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--border-subtle); flex-wrap: wrap; gap: 14px;">
+        <div>
+          <span class="text-xs text-bold" style="color: var(--text-muted); text-transform: uppercase;">Service Appointment</span>
+          <h1 style="font-size: 1.8rem; margin: 4px 0 8px;">Booking #SVR{{ booking.id|stringformat:"05d" }}</h1>
+          <div class="text-xs" style="color: var(--text-muted);">
+            Booked on {{ booking.created_at|date:"l, F d, Y" }} at {{ booking.created_at|time:"g:i A" }}
+          </div>
+        </div>
+        <div>
+          {% if booking.status == 'pending' %}
+            <span class="badge badge-pending" style="font-size: 0.85rem; padding: 6px 14px;">Pending Approval</span>
+          {% elif booking.status == 'accepted' %}
+            <span class="badge" style="background: #EFF6FF; color: #2563EB; font-size: 0.85rem; padding: 6px 14px;">Accepted &bull; Scheduled</span>
+          {% elif booking.status == 'completed' %}
+            <span class="badge badge-completed" style="font-size: 0.85rem; padding: 6px 14px;">Completed</span>
+          {% elif booking.status == 'cancelled' %}
+            <span class="badge badge-cancelled" style="font-size: 0.85rem; padding: 6px 14px;">Cancelled</span>
+          {% elif booking.status == 'declined' %}
+            <span class="badge badge-declined" style="font-size: 0.85rem; padding: 6px 14px;">Declined</span>
+          {% else %}
+            <span class="badge">{{ booking.get_status_display }}</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Service & Provider Split -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
+        <div style="background: var(--bg-cool-gray); border-radius: var(--radius-md); padding: 20px;">
+          <span class="text-xs text-bold" style="color: var(--text-muted); text-transform: uppercase;">Service Details</span>
+          <h3 style="font-size: 1.15rem; margin: 6px 0;">{{ booking.service.title }}</h3>
+          <p class="text-sm" style="margin-bottom: 6px;">Category: <strong>{{ booking.service.category.name }}</strong></p>
+          <div class="text-xs" style="color: var(--text-secondary);">Estimated duration: {{ booking.service.duration_estimate }}</div>
+        </div>
+
+        <div style="background: var(--bg-cool-gray); border-radius: var(--radius-md); padding: 20px;">
+          <span class="text-xs text-bold" style="color: var(--text-muted); text-transform: uppercase;">Provider Specialist</span>
+          <div style="display: flex; align-items: center; gap: 12px; margin-top: 8px;">
+            <div class="hero-visual-avatar" style="width: 40px; height: 40px; font-size: 0.95rem;">
+              {{ booking.service.provider.user.first_name|default:booking.service.provider.user.username|slice:":2"|upper }}
+            </div>
+            <div>
+              <strong style="font-size: 1rem;">{{ booking.service.provider.user.get_full_name|default:booking.service.provider.user.username }}</strong>
+              <div class="text-xs" style="color: var(--text-muted);">{{ booking.service.provider.city }} &bull; {{ booking.service.provider.phone|default:"Contact via Servora" }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Schedule & Address Ticket -->
+      <div class="ticket-box" style="margin: 0 0 24px;">
+        <div class="ticket-row">
+          <span style="color: var(--text-muted);">Scheduled Date:</span>
+          <strong>{{ booking.booking_date|date:"l, F d, Y" }}</strong>
+        </div>
+        <div class="ticket-row">
+          <span style="color: var(--text-muted);">Scheduled Time:</span>
+          <strong>{{ booking.booking_time|time:"g:i A" }}</strong>
+        </div>
+        <div class="ticket-row">
+          <span style="color: var(--text-muted);">Service Address:</span>
+          <span style="text-align: right; max-width: 60%; font-weight: 600;">{{ booking.address }}</span>
+        </div>
+        {% if booking.notes %}
+          <div class="ticket-row">
+            <span style="color: var(--text-muted);">Special Instructions:</span>
+            <span style="text-align: right; max-width: 60%;">{{ booking.notes }}</span>
+          </div>
+        {% endif %}
+      </div>
+
+      <!-- Pricing Summary & Platform Transparency -->
+      <div style="padding: 20px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle); margin-bottom: 28px;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.92rem;">
+          <span style="color: var(--text-secondary);">Agreed Service Price:</span>
+          <strong>₹{{ booking.total_amount|floatformat:2 }}</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.92rem;">
+          <span style="color: var(--text-secondary);">Platform Commission (10%):</span>
+          <span style="color: #059669; font-weight: 600;">₹{{ booking.commission_amount|floatformat:2 }} (Included)</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: baseline; padding-top: 12px; margin-top: 12px; border-top: 1px solid var(--border-subtle); font-size: 1.1rem;">
+          <strong>Total Payment Due on Completion:</strong>
+          <strong style="font-size: 1.45rem; color: var(--accent-primary);">₹{{ booking.total_amount|floatformat:0 }}</strong>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+        {% if is_customer_owner %}
+          <a href="{% url 'my_bookings' %}" class="btn btn-outline">
+            ← Back to My Bookings
+          </a>
+
+          {% if booking.status == 'pending' %}
+            <form method="POST" action="{% url 'cancel_booking' booking.id %}" onsubmit="return confirm('Are you sure you want to cancel this booking? This will immediately free up the scheduled time slot.');">
+              {% csrf_token %}
+              <button type="submit" class="btn" style="background: var(--status-danger-bg); color: var(--status-danger-text); border: 1px solid #FECACA;">
+                Cancel Booking
+              </button>
+            </form>
+          {% endif %}
+        {% else %}
+          <a href="{% url 'provider_bookings' %}" class="btn btn-outline">
+            ← Back to Provider Bookings
+          </a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

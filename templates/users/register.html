@@ -1,0 +1,131 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Sign Up – Join Servora Marketplace{% endblock %}
+
+{% block content %}
+<section class="auth-section">
+  <div class="container">
+    <div class="auth-card auth-card-wide">
+      <div class="auth-header">
+        <a href="{% url 'home' %}" class="logo" style="justify-content: center; margin-bottom: 16px;">
+          <span>Servora</span><span class="logo-dot"></span>
+        </a>
+        <h2>Join Servora</h2>
+        <p>Choose your role to get started with trusted local services.</p>
+      </div>
+
+      <form method="POST" action="{% url 'register' %}">
+        {% csrf_token %}
+
+        <!-- Dual-Role Selection Visual Cards -->
+        <label class="form-label" style="margin-bottom: 10px;">Select Your Account Type</label>
+        <div class="role-cards-grid">
+          <label class="role-card-label">
+            <input type="radio" name="role" value="customer" {% if selected_role == 'customer' %}checked{% endif %}>
+            <div class="role-card-box">
+              <div class="role-card-icon">🏠</div>
+              <div class="role-card-title">Customer / Homeowner</div>
+              <div class="role-card-desc">Find & book verified home service professionals</div>
+            </div>
+          </label>
+
+          <label class="role-card-label">
+            <input type="radio" name="role" value="provider" {% if selected_role == 'provider' %}checked{% endif %}>
+            <div class="role-card-box">
+              <div class="role-card-icon">🛠️</div>
+              <div class="role-card-title">Service Provider</div>
+              <div class="role-card-desc">Grow your business and receive client job requests</div>
+            </div>
+          </label>
+        </div>
+
+        <!-- Name Fields (Two Columns) -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div class="form-group">
+            <label class="form-label" for="id_first_name">First Name *</label>
+            {{ form.first_name }}
+            {% if form.first_name.errors %}
+              <div class="form-error">{{ form.first_name.errors.0 }}</div>
+            {% endif %}
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="id_last_name">Last Name *</label>
+            {{ form.last_name }}
+            {% if form.last_name.errors %}
+              <div class="form-error">{{ form.last_name.errors.0 }}</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Username & Email (Two Columns) -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div class="form-group">
+            <label class="form-label" for="id_username">Username *</label>
+            {{ form.username }}
+            {% if form.username.errors %}
+              <div class="form-error">{{ form.username.errors.0 }}</div>
+            {% endif %}
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="id_email">Email Address *</label>
+            {{ form.email }}
+            {% if form.email.errors %}
+              <div class="form-error">{{ form.email.errors.0 }}</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Phone & City (Two Columns) -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div class="form-group">
+            <label class="form-label" for="id_phone">Phone Number</label>
+            {{ form.phone }}
+            {% if form.phone.errors %}
+              <div class="form-error">{{ form.phone.errors.0 }}</div>
+            {% endif %}
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="id_city">City</label>
+            {{ form.city }}
+            {% if form.city.errors %}
+              <div class="form-error">{{ form.city.errors.0 }}</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Passwords (Two Columns) -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div class="form-group">
+            <label class="form-label" for="id_password1">Password *</label>
+            <input type="password" name="password1" id="id_password1" class="form-input" placeholder="Create Password" required>
+            {% if form.password1.errors %}
+              <div class="form-error">{{ form.password1.errors.0 }}</div>
+            {% endif %}
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="id_password2">Confirm Password *</label>
+            <input type="password" name="password2" id="id_password2" class="form-input" placeholder="Repeat Password" required>
+            {% if form.password2.errors %}
+              <div class="form-error">{{ form.password2.errors.0 }}</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px; padding: 14px;">
+          Create My Servora Account
+        </button>
+      </form>
+
+      <div style="text-align: center; margin-top: 24px; font-size: 0.9rem; color: var(--text-secondary);">
+        Already have an account? 
+        <a href="{% url 'login' %}" style="font-weight: 700; color: var(--accent-primary);">Log In Here</a>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

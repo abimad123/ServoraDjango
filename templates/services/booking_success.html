@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Booking Request Sent – Servora{% endblock %}
+
+{% block extra_css %}
+  <link rel="stylesheet" href="{% static 'css/customer.css' %}">
+  <link rel="stylesheet" href="{% static 'css/booking.css' %}">
+{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="container">
+    <div class="success-screen-card">
+      <div class="success-icon-badge">✓</div>
+      <span class="section-subtitle">Request Received</span>
+      <h1 style="font-size: 2rem; margin-bottom: 10px; color: var(--brand-dark);">
+        Booking Request Sent!
+      </h1>
+      <p style="color: var(--text-secondary); max-width: 500px; margin: 0 auto 20px;">
+        Your request has been dispatched to <strong>{{ booking.service.provider.user.get_full_name|default:booking.service.provider.user.username }}</strong>. They will review your scheduled slot and confirm shortly.
+      </p>
+
+      <!-- Digital Receipt Ticket Box -->
+      <div class="ticket-box">
+        <div class="ticket-row">
+          <span style="color: var(--text-muted);">Booking Reference:</span>
+          <strong>#SVR{{ booking.id|stringformat:"05d" }}</strong>
+        </div>
+        <div class="ticket-row">
+          <span style="color: var(--text-muted);">Service:</span>
+          <strong>{{ booking.service.title }}</strong>
+        </div>
+        <div class="ticket-row">
+          <span style="color: var(--text-muted);">Provider Partner:</span>
+          <strong>{{ booking.service.provider.user.get_full_name|default:booking.service.provider.user.username }}</strong>
+        </div>
+        <div class="ticket-row">
+          <span style="color: var(--text-muted);">Scheduled Date:</span>
+          <strong>{{ booking.booking_date|date:"l, F d, Y" }}</strong>
+        </div>
+        <div class="ticket-row">
+          <span style="color: var(--text-muted);">Scheduled Time:</span>
+          <strong>{{ booking.booking_time|time:"g:i A" }}</strong>
+        </div>
+        <div class="ticket-row">
+          <span style="color: var(--text-muted);">Service Address:</span>
+          <span style="text-align: right; max-width: 60%; font-weight: 600;">{{ booking.address }}</span>
+        </div>
+        <div class="ticket-row">
+          <span style="color: var(--text-muted);">Status:</span>
+          <span class="badge badge-pending">{{ booking.get_status_display }}</span>
+        </div>
+        <div class="ticket-row" style="border-top: 1px dashed var(--border-strong); padding-top: 14px; margin-top: 14px;">
+          <span style="color: var(--text-muted); font-weight: 600;">Estimated Total Due on Completion:</span>
+          <strong style="font-size: 1.35rem; color: var(--accent-primary);">₹{{ booking.total_amount|floatformat:0 }}</strong>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 14px; justify-content: center; flex-wrap: wrap;">
+        <a href="{% url 'my_bookings' %}" class="btn btn-primary btn-lg">
+          View My Bookings
+        </a>
+        <a href="{% url 'service_list' %}" class="btn btn-outline btn-lg">
+          Back to Services
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
