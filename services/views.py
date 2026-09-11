@@ -4,6 +4,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.utils import timezone
 from django.db.models import Q, Avg, Count, Sum, F, OuterRef, Exists
 from .models import (
     Category, Service, Booking, Review, FeaturedListing, RevenueTransaction, 
@@ -547,6 +548,14 @@ def provider_dashboard_view(request):
 
     total_services_count = Service.objects.filter(provider=provider, is_active=True).count()
 
+    # Stage 8A: Provider Settlements & Financial Summary
+    settlements = ProviderSettlement.objects.filter(provider=provider)
+    pending_payouts = settlements.filter(status='pending').aggregate(total=Sum('payout_amount'))['total'] or Decimal('0.00')
+    paid_payouts = settlements.filter(status='paid').aggregate(total=Sum('payout_amount'))['total'] or Decimal('0.00')
+    gbv_settlements = settlements.filter(status__in=['pending', 'paid']).aggregate(total=Sum('gross_amount'))['total'] or Decimal('0.00')
+    comm_settlements = settlements.filter(status__in=['pending', 'paid']).aggregate(total=Sum('commission_amount'))['total'] or Decimal('0.00')
+    total_settlement_earnings = pending_payouts + paid_payouts
+
     return render(request, 'provider/dashboard.html', {
         'provider': provider,
         'today_earnings': today_earnings,
@@ -556,6 +565,11 @@ def provider_dashboard_view(request):
         'pending_requests': pending_requests,
         'upcoming_jobs': upcoming_jobs,
         'total_services_count': total_services_count,
+        'pending_payouts': pending_payouts,
+        'paid_payouts': paid_payouts,
+        'gbv_settlements': gbv_settlements,
+        'comm_settlements': comm_settlements,
+        'total_settlement_earnings': total_settlement_earnings,
         'active_tab': 'dashboard',
     })
 
@@ -1528,15 +1542,15 @@ def checkout_view(request, booking_id):
         id=booking_id
     )
 
-    # Security: Only booking customer can checkout
-    if booking.customer != request.user:
-        messages.error(request, "You are not authorized to checkout for this booking.")
-        return redirect('my_bookings')
-
     # Security: Service providers cannot place/checkout customer bookings
     if hasattr(request.user, 'profile') and request.user.profile.is_provider:
         messages.error(request, "Service provider accounts cannot perform customer checkouts.")
         return redirect('service_detail', id=booking.service.id)
+
+    # Security: Only booking customer can checkout
+    if booking.customer != request.user:
+        messages.error(request, "You are not authorized to checkout for this booking.")
+        return redirect('my_bookings')
 
     # If already paid, notify and redirect to booking detail
     if booking.payment_status == 'paid':

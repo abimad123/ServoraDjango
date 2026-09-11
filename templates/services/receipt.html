@@ -43,6 +43,18 @@
       </div>
     </div>
 
+    {% if payment_txn %}
+      <div style="background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; flex-wrap: wrap; gap: 8px;">
+        <div>
+          <span style="color: #166534; font-weight: 700;">Payment Captured ({{ payment_txn.get_payment_method_display }}):</span>
+          <span style="font-family: monospace; color: #15803D; font-weight: 700;">{{ payment_txn.gateway_payment_id|default:payment_txn.gateway_order_id }}</span>
+        </div>
+        <div style="color: #166534; font-size: 0.8rem;">
+          Settled at {{ payment_txn.paid_at|date:"d M Y, h:i A" }}
+        </div>
+      </div>
+    {% endif %}
+
     <!-- Parties Involved Grid -->
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem; font-size: 0.88rem;">
       <div>

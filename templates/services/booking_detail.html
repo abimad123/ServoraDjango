@@ -33,7 +33,6 @@
             Booked on {{ booking.created_at|date:"l, F d, Y" }} at {{ booking.created_at|time:"g:i A" }}
           </div>
         </div>
-        <div>
           {% if booking.status == 'pending' %}
             <span class="badge badge-pending" style="font-size: 0.85rem; padding: 6px 14px;">Pending Approval</span>
           {% elif booking.status == 'accepted' %}
@@ -46,6 +45,16 @@
             <span class="badge badge-declined" style="font-size: 0.85rem; padding: 6px 14px;">Declined</span>
           {% else %}
             <span class="badge">{{ booking.get_status_display }}</span>
+          {% endif %}
+
+          {% if booking.payment_status == 'paid' %}
+            <span class="badge" style="background: #ECFDF5; color: #059669; font-size: 0.85rem; padding: 6px 14px;">✓ Paid</span>
+          {% elif booking.payment_status == 'failed' %}
+            <span class="badge" style="background: #FEF2F2; color: #DC2626; font-size: 0.85rem; padding: 6px 14px;">Payment Failed</span>
+          {% elif booking.payment_status == 'refunded' %}
+            <span class="badge" style="background: #F3F4F6; color: #6B7280; font-size: 0.85rem; padding: 6px 14px;">Refunded</span>
+          {% else %}
+            <span class="badge" style="background: #FFFBEB; color: #D97706; font-size: 0.85rem; padding: 6px 14px;">Unpaid</span>
           {% endif %}
         </div>
       </div>
@@ -159,6 +168,12 @@
           {% if booking.status == 'completed' %}
             <a href="{% url 'booking_receipt' booking.id %}" target="_blank" class="btn btn-outline" style="background: #F8FAFC; border-color: #CBD5E1; color: #1E293B;">
               📄 View Commercial Receipt
+            </a>
+          {% endif %}
+
+          {% if is_customer_owner and booking.payment_status != 'paid' and booking.status != 'cancelled' and booking.status != 'declined' %}
+            <a href="{% url 'checkout' booking.id %}" class="btn btn-primary" style="background: #0D6EFD; border-color: #0D6EFD; font-weight: 800;">
+              💳 Pay Now (₹{{ booking.total_amount|floatformat:0 }})
             </a>
           {% endif %}
         </div>

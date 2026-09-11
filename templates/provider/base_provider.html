@@ -85,6 +85,26 @@
           </a>
         </li>
         <li>
+          <a href="{% url 'provider_settlements' %}" class="provider-nav-item {% if active_tab == 'settlements' %}active{% endif %}">
+            <span class="provider-nav-item-left">
+              <span class="provider-nav-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect></svg>
+              </span>
+              <span>Settlements</span>
+            </span>
+          </a>
+        </li>
+        <li>
+          <a href="{% url 'provider_payout_settings' %}" class="provider-nav-item {% if active_tab == 'payout_settings' %}active{% endif %}">
+            <span class="provider-nav-item-left">
+              <span class="provider-nav-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
+              </span>
+              <span>Payout Settings</span>
+            </span>
+          </a>
+        </li>
+        <li>
           <a href="{% url 'provider_subscription' %}" class="provider-nav-item {% if active_tab == 'subscription' %}active{% endif %}">
             <span class="provider-nav-item-left">
               <span class="provider-nav-icon">

@@ -2,7 +2,11 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth.models import User
 from users.models import UserProfile, ProviderSubscription
-from services.models import Category, Service, Booking, Review, FeaturedListing, RevenueTransaction, Notification
+from services.models import (
+    Category, Service, Booking, Review, FeaturedListing, RevenueTransaction, 
+    Notification, PaymentTransaction, ProviderSettlement
+)
+from services.payment_service import PaymentService, TestGatewayAdapter
 from datetime import date, time, timedelta
 from decimal import Decimal
 
@@ -1966,6 +1970,544 @@ class RGMVerifiableRevenueTests(TestCase):
         self.assertNotContains(response, 'GSTIN')
         self.assertNotContains(response, '18% GST')
         self.assertNotContains(response, 'Tax Invoice')
+
+
+# ============================================================
+# STAGE 8A: PAYMENT SYSTEM, CHECKOUT & SETTLEMENT TESTS
+# ============================================================
+
+class PaymentAndSettlementTests(TestCase):
+    """
+    Automated test suite verifying the Stage 8A payment system:
+    Customer checkout, server-side amount calculation, 10% commission split,
+    provider settlements (90%), test gateway adapter, webhook idempotency,
+    refund protocol, and strict separation between payment, platform revenue,
+    and RGM verified revenue.
+    """
+
+    def setUp(self):
+        self.client = Client()
+
+        # Create platform admin
+        self.admin_user = User.objects.create_superuser(
+            username='pay_admin',
+            email='admin@servora.in',
+            password='password123'
+        )
+
+        # Create Customer 1
+        self.customer1 = User.objects.create_user(
+            username='pay_customer_1',
+            password='password123',
+            first_name='Ananya',
+            last_name='Nair'
+        )
+
+        # Create Customer 2
+        self.customer2 = User.objects.create_user(
+            username='pay_customer_2',
+            password='password123',
+            first_name='Karthik',
+            last_name='Menon'
+        )
+
+        # Create Provider 1
+        self.provider_user1 = User.objects.create_user(
+            username='pay_provider_1',
+            password='password123',
+            first_name='Suresh',
+            last_name='Kumar'
+        )
+        self.provider_profile1 = self.provider_user1.profile
+        self.provider_profile1.role = 'provider'
+        self.provider_profile1.city = 'Kannur'
+        self.provider_profile1.is_verified = True
+        self.provider_profile1.payout_upi_id = 'suresh@okhdfcbank'
+        self.provider_profile1.payout_upi_name = 'Suresh Kumar'
+        self.provider_profile1.payout_status = 'ready'
+        self.provider_profile1.save()
+
+        # Create Provider 2
+        self.provider_user2 = User.objects.create_user(
+            username='pay_provider_2',
+            password='password123',
+            first_name='Ramesh',
+            last_name='Babu'
+        )
+        self.provider_profile2 = self.provider_user2.profile
+        self.provider_profile2.role = 'provider'
+        self.provider_profile2.city = 'Kochi'
+        self.provider_profile2.is_verified = True
+        self.provider_profile2.payout_upi_id = 'ramesh@icici'
+        self.provider_profile2.payout_upi_name = 'Ramesh Babu'
+        self.provider_profile2.payout_status = 'ready'
+        self.provider_profile2.save()
+
+        # Category & Service
+        self.category = Category.objects.create(
+            name='Home Electrical',
+            slug='home-electrical',
+            icon_name='zap',
+            description='Electrical repair and installations.'
+        )
+
+        self.service1 = Service.objects.create(
+            provider=self.provider_profile1,
+            category=self.category,
+            title='Ceiling Fan Installation & Wiring',
+            slug='ceiling-fan-installation',
+            description='Professional ceiling fan mounting with balanced blade testing.',
+            price=Decimal('2000.00'),
+            duration_estimate='1.5 Hours',
+            location='Kannur',
+            is_active=True
+        )
+
+        # Booking for Customer 1
+        self.booking1 = Booking.objects.create(
+            service=self.service1,
+            customer=self.customer1,
+            booking_date=date.today() + timedelta(days=2),
+            booking_time=time(10, 0),
+            status='pending',
+            payment_status='unpaid',
+            total_amount=Decimal('2000.00'),
+            address='Skyline City View, Flat 4B, Kannur'
+        )
+
+    # 1. Customer can access own checkout
+    def test_customer_can_access_own_checkout(self):
+        self.client.login(username='pay_customer_1', password='password123')
+        response = self.client.get(reverse('checkout', kwargs={'booking_id': self.booking1.id}))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'services/checkout.html')
+        self.assertContains(response, 'Customer Checkout')
+        self.assertContains(response, '2000')
+
+    # 2. Customer cannot access another customer's checkout
+    def test_customer_cannot_access_other_customer_checkout(self):
+        self.client.login(username='pay_customer_2', password='password123')
+        response = self.client.get(reverse('checkout', kwargs={'booking_id': self.booking1.id}))
+        self.assertEqual(response.status_code, 302)
+        self.assertRedirects(response, reverse('my_bookings'))
+
+    # 3. Provider cannot access customer checkout
+    def test_provider_cannot_access_customer_checkout(self):
+        self.client.login(username='pay_provider_1', password='password123')
+        response = self.client.get(reverse('checkout', kwargs={'booking_id': self.booking1.id}))
+        self.assertEqual(response.status_code, 302)
+        self.assertRedirects(response, reverse('service_detail', kwargs={'id': self.service1.id}))
+
+    # 4. Server calculates payment amount
+    def test_server_calculates_payment_amount(self):
+        split = PaymentService.calculate_split(self.booking1.total_amount)
+        self.assertEqual(split['gross_amount'], Decimal('2000.00'))
+        self.assertEqual(split['commission_amount'], Decimal('200.00'))
+        self.assertEqual(split['payout_amount'], Decimal('1800.00'))
+
+    # 5. Amount cannot be manipulated from POST
+    def test_amount_cannot_be_manipulated_from_post(self):
+        self.client.login(username='pay_customer_1', password='password123')
+        txn = PaymentService.create_payment_order(self.booking1, payment_method='upi')
+        test_sig = TestGatewayAdapter.generate_signature(txn.gateway_order_id, 'pay_tamper_123')
+
+        # Tampered POST data claiming amount is 1.00
+        response = self.client.post(reverse('payment_success', kwargs={'booking_id': self.booking1.id}), {
+            'gateway_order_id': txn.gateway_order_id,
+            'gateway_payment_id': 'pay_tamper_123',
+            'gateway_signature': test_sig,
+            'payment_method': 'upi',
+            'amount': '1.00'
+        })
+        self.assertEqual(response.status_code, 302)
+
+        # Verify recorded transaction reflects server amount of 2000.00
+        captured_txn = PaymentTransaction.objects.get(gateway_payment_id='pay_tamper_123')
+        self.assertEqual(captured_txn.amount, Decimal('2000.00'))
+
+    # 6. 10% commission calculated correctly
+    def test_ten_percent_commission_calculated_correctly(self):
+        split = PaymentService.calculate_split(Decimal('5000.00'))
+        self.assertEqual(split['commission_amount'], Decimal('500.00'))
+
+    # 7. Provider payout calculated correctly (90%)
+    def test_provider_payout_calculated_correctly(self):
+        split = PaymentService.calculate_split(Decimal('5000.00'))
+        self.assertEqual(split['payout_amount'], Decimal('4500.00'))
+
+    # 8. Successful payment creates PaymentTransaction
+    def test_successful_payment_creates_payment_transaction(self):
+        self.client.login(username='pay_customer_1', password='password123')
+        txn = PaymentService.create_payment_order(self.booking1, payment_method='upi')
+        test_sig = TestGatewayAdapter.generate_signature(txn.gateway_order_id, 'pay_success_001')
+
+        response = self.client.post(reverse('payment_success', kwargs={'booking_id': self.booking1.id}), {
+            'gateway_order_id': txn.gateway_order_id,
+            'gateway_payment_id': 'pay_success_001',
+            'gateway_signature': test_sig,
+            'payment_method': 'upi'
+        })
+        self.assertEqual(response.status_code, 302)
+
+        self.booking1.refresh_from_db()
+        self.assertEqual(self.booking1.payment_status, 'paid')
+        captured = PaymentTransaction.objects.filter(booking=self.booking1, status='captured').first()
+        self.assertIsNotNone(captured)
+        self.assertEqual(captured.gateway_payment_id, 'pay_success_001')
+
+    # 9. Failed payment does not create revenue or settlement
+    def test_failed_payment_does_not_create_revenue_or_settlement(self):
+        self.client.login(username='pay_customer_1', password='password123')
+        txn = PaymentService.create_payment_order(self.booking1, payment_method='upi')
+
+        response = self.client.post(reverse('payment_failed', kwargs={'booking_id': self.booking1.id}), {
+            'gateway_order_id': txn.gateway_order_id,
+            'failure_reason': 'User bank server timed out'
+        })
+        self.assertEqual(response.status_code, 302)
+
+        self.booking1.refresh_from_db()
+        self.assertEqual(self.booking1.payment_status, 'failed')
+        self.assertFalse(ProviderSettlement.objects.filter(booking=self.booking1).exists())
+        self.assertFalse(RevenueTransaction.objects.filter(booking=self.booking1).exists())
+
+    # 10. Duplicate payment callback is idempotent
+    def test_duplicate_payment_callback_is_idempotent(self):
+        txn = PaymentService.create_payment_order(self.booking1, payment_method='upi')
+        test_sig = TestGatewayAdapter.generate_signature(txn.gateway_order_id, 'pay_idem_001')
+
+        # First capture
+        PaymentService.verify_and_capture_payment(
+            booking=self.booking1,
+            gateway_order_id=txn.gateway_order_id,
+            gateway_payment_id='pay_idem_001',
+            gateway_signature=test_sig,
+            payment_method='upi'
+        )
+
+        # Second capture re-call
+        PaymentService.verify_and_capture_payment(
+            booking=self.booking1,
+            gateway_order_id=txn.gateway_order_id,
+            gateway_payment_id='pay_idem_001',
+            gateway_signature=test_sig,
+            payment_method='upi'
+        )
+
+        # Must have exactly 1 PaymentTransaction and 1 ProviderSettlement
+        self.assertEqual(PaymentTransaction.objects.filter(booking=self.booking1, status='captured').count(), 1)
+        self.assertEqual(ProviderSettlement.objects.filter(booking=self.booking1).count(), 1)
+
+    # 11. Duplicate webhook is idempotent
+    def test_duplicate_webhook_is_idempotent(self):
+        txn = PaymentService.create_payment_order(self.booking1, payment_method='upi')
+        test_sig = TestGatewayAdapter.generate_signature(txn.gateway_order_id, 'pay_wh_001')
+
+        import json
+        payload = json.dumps({
+            'event': 'payment.captured',
+            'payload': {
+                'payment': {
+                    'entity': {
+                        'order_id': txn.gateway_order_id,
+                        'id': 'pay_wh_001',
+                        'method': 'upi',
+                        'signature': test_sig
+                    }
+                }
+            }
+        }).encode('utf-8')
+        wh_sig = TestGatewayAdapter.generate_webhook_signature(payload)
+
+        # Send webhook 1
+        resp1 = self.client.post(
+            reverse('payment_webhook'),
+            data=payload,
+            content_type='application/json',
+            HTTP_X_PAYMENT_SIGNATURE=wh_sig
+        )
+        self.assertEqual(resp1.status_code, 200)
+
+        # Send webhook 2 (identical re-delivery)
+        resp2 = self.client.post(
+            reverse('payment_webhook'),
+            data=payload,
+            content_type='application/json',
+            HTTP_X_PAYMENT_SIGNATURE=wh_sig
+        )
+        self.assertEqual(resp2.status_code, 200)
+
+        self.assertEqual(PaymentTransaction.objects.filter(booking=self.booking1, status='captured').count(), 1)
+        self.assertEqual(ProviderSettlement.objects.filter(booking=self.booking1).count(), 1)
+
+    # 12. Payment reference stored correctly
+    def test_payment_reference_stored_correctly(self):
+        txn = PaymentService.create_payment_order(self.booking1, payment_method='upi')
+        test_sig = TestGatewayAdapter.generate_signature(txn.gateway_order_id, 'pay_ref_test_999')
+
+        captured = PaymentService.verify_and_capture_payment(
+            booking=self.booking1,
+            gateway_order_id=txn.gateway_order_id,
+            gateway_payment_id='pay_ref_test_999',
+            gateway_signature=test_sig,
+            payment_method='upi'
+        )
+        self.assertEqual(captured.gateway_payment_id, 'pay_ref_test_999')
+        self.assertEqual(captured.gateway_order_id, txn.gateway_order_id)
+        self.assertEqual(captured.gateway_signature, test_sig)
+
+    # 13. Booking payment status changes correctly
+    def test_booking_payment_status_changes_correctly(self):
+        self.assertEqual(self.booking1.payment_status, 'unpaid')
+        txn = PaymentService.create_payment_order(self.booking1)
+        sig = TestGatewayAdapter.generate_signature(txn.gateway_order_id, 'pay_status_123')
+        PaymentService.verify_and_capture_payment(self.booking1, txn.gateway_order_id, 'pay_status_123', sig)
+        self.booking1.refresh_from_db()
+        self.assertEqual(self.booking1.payment_status, 'paid')
+
+    # 14. Provider settlement created correctly
+    def test_provider_settlement_created_correctly(self):
+        txn = PaymentService.create_payment_order(self.booking1)
+        sig = TestGatewayAdapter.generate_signature(txn.gateway_order_id, 'pay_set_test')
+        PaymentService.verify_and_capture_payment(self.booking1, txn.gateway_order_id, 'pay_set_test', sig)
+
+        settlement = ProviderSettlement.objects.get(booking=self.booking1)
+        self.assertEqual(settlement.gross_amount, Decimal('2000.00'))
+        self.assertEqual(settlement.commission_amount, Decimal('200.00'))
+        self.assertEqual(settlement.payout_amount, Decimal('1800.00'))
+        self.assertEqual(settlement.status, 'pending')
+
+    # 15. Provider sees only own settlements
+    def test_provider_sees_only_own_settlements(self):
+        # Create settlement for provider 1
+        ProviderSettlement.objects.create(
+            booking=self.booking1,
+            provider=self.provider_profile1,
+            gross_amount=Decimal('2000.00'),
+            commission_amount=Decimal('200.00'),
+            payout_amount=Decimal('1800.00'),
+            status='pending'
+        )
+
+        # Create service & booking for provider 2
+        service2 = Service.objects.create(
+            provider=self.provider_profile2,
+            category=self.category,
+            title='Inverter Installation',
+            slug='inverter-installation',
+            description='Home power backup setup.',
+            price=Decimal('3000.00'),
+            location='Kochi'
+        )
+        booking2 = Booking.objects.create(
+            service=service2,
+            customer=self.customer2,
+            booking_date=date.today(),
+            booking_time=time(14, 0),
+            total_amount=Decimal('3000.00'),
+            status='pending'
+        )
+        ProviderSettlement.objects.create(
+            booking=booking2,
+            provider=self.provider_profile2,
+            gross_amount=Decimal('3000.00'),
+            commission_amount=Decimal('300.00'),
+            payout_amount=Decimal('2700.00'),
+            status='pending'
+        )
+
+        # Provider 1 views settlements
+        self.client.login(username='pay_provider_1', password='password123')
+        response = self.client.get(reverse('provider_settlements'))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['settlements'].count(), 1)
+        self.assertEqual(response.context['settlements'].first().provider, self.provider_profile1)
+
+    # 16. Customer sees own payment history
+    def test_customer_sees_own_payment_history(self):
+        PaymentTransaction.objects.create(
+            booking=self.booking1,
+            customer=self.customer1,
+            provider=self.provider_profile1,
+            amount=Decimal('2000.00'),
+            status='captured'
+        )
+        self.client.login(username='pay_customer_1', password='password123')
+        response = self.client.get(reverse('customer_payment_history'))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['payments'].count(), 1)
+
+    # 17. Unauthorized user cannot access platform payment dashboard
+    def test_unauthorized_user_cannot_access_platform_payment_dashboard(self):
+        # Unauthenticated
+        resp_anon = self.client.get(reverse('platform_payments'))
+        self.assertEqual(resp_anon.status_code, 302)
+
+        # Customer
+        self.client.login(username='pay_customer_1', password='password123')
+        resp_cust = self.client.get(reverse('platform_payments'))
+        self.assertEqual(resp_cust.status_code, 302)
+
+    # 18. Provider cannot access platform payment dashboard
+    def test_provider_cannot_access_platform_payment_dashboard(self):
+        self.client.login(username='pay_provider_1', password='password123')
+        response = self.client.get(reverse('platform_payments'))
+        self.assertEqual(response.status_code, 302)
+
+    # 19. Refund changes payment status
+    def test_refund_changes_payment_status(self):
+        txn = PaymentService.create_payment_order(self.booking1)
+        sig = TestGatewayAdapter.generate_signature(txn.gateway_order_id, 'pay_ref_abc')
+        PaymentService.verify_and_capture_payment(self.booking1, txn.gateway_order_id, 'pay_ref_abc', sig)
+
+        result = PaymentService.handle_refund(self.booking1, reason='Customer requested refund')
+        self.assertTrue(result['success'])
+
+        self.booking1.refresh_from_db()
+        self.assertEqual(self.booking1.payment_status, 'refunded')
+        captured_txn = PaymentTransaction.objects.get(gateway_payment_id='pay_ref_abc')
+        self.assertEqual(captured_txn.status, 'refunded')
+        settlement = ProviderSettlement.objects.get(booking=self.booking1)
+        self.assertEqual(settlement.status, 'refunded')
+
+    # 20. Refunded payment does not remain valid revenue
+    def test_refunded_payment_does_not_remain_valid_revenue(self):
+        # Setup completed booking with commission revenue
+        self.booking1.status = 'completed'
+        self.booking1.payment_status = 'paid'
+        self.booking1.save()
+
+        rev = RevenueTransaction.objects.create(
+            revenue_type='commission',
+            amount=Decimal('200.00'),
+            provider=self.provider_profile1,
+            booking=self.booking1,
+            description='10% Platform Commission',
+            status='completed',
+            verification_status='verified',
+            has_evidence=True,
+            transaction_reference='UTR_REF_123456'
+        )
+
+        PaymentService.handle_refund(self.booking1, reason='Refunded job')
+        rev.refresh_from_db()
+        self.assertEqual(rev.status, 'refunded')
+        self.assertFalse(rev.is_rgm_verified)
+
+    # 21. Demo revenue remains excluded from RGM verified revenue
+    def test_demo_revenue_remains_excluded_from_rgm_verified_revenue(self):
+        demo_tx = RevenueTransaction.objects.create(
+            revenue_type='commission',
+            amount=Decimal('500.00'),
+            provider=self.provider_profile1,
+            is_demo=True,
+            status='completed',
+            verification_status='verified',
+            has_evidence=True,
+            transaction_reference='DEMO_REF'
+        )
+        self.assertFalse(demo_tx.is_rgm_verified)
+
+    # 22. Successful payment alone does not mark RGM transaction verified
+    def test_successful_payment_alone_does_not_mark_rgm_verified(self):
+        txn = PaymentService.create_payment_order(self.booking1)
+        sig = TestGatewayAdapter.generate_signature(txn.gateway_order_id, 'pay_rgm_check')
+        PaymentService.verify_and_capture_payment(self.booking1, txn.gateway_order_id, 'pay_rgm_check', sig)
+
+        # Check that no RevenueTransaction exists yet because service is not completed
+        self.assertFalse(RevenueTransaction.objects.filter(booking=self.booking1).exists())
+
+    # 23. Evidence requirements remain enforced
+    def test_evidence_requirements_remain_enforced(self):
+        actual_tx = RevenueTransaction.objects.create(
+            revenue_type='commission',
+            amount=Decimal('200.00'),
+            provider=self.provider_profile1,
+            booking=self.booking1,
+            status='completed',
+            verification_status='verified',
+            has_evidence=False,  # No evidence!
+            transaction_reference='UTR_NO_EVIDENCE'
+        )
+        self.assertFalse(actual_tx.is_rgm_verified)
+
+    # 24. Existing receipt displays payment reference
+    def test_existing_receipt_displays_payment_reference(self):
+        self.booking1.status = 'completed'
+        self.booking1.payment_status = 'paid'
+        self.booking1.save()
+
+        PaymentTransaction.objects.create(
+            booking=self.booking1,
+            customer=self.customer1,
+            provider=self.provider_profile1,
+            amount=Decimal('2000.00'),
+            gateway_payment_id='pay_receipt_disp_123',
+            status='captured'
+        )
+
+        self.client.login(username='pay_customer_1', password='password123')
+        response = self.client.get(reverse('booking_receipt', kwargs={'booking_id': self.booking1.id}))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'pay_receipt_disp_123')
+
+    # 25. No fake GSTIN or tax information generated
+    def test_no_fake_gstin_generated(self):
+        self.booking1.status = 'completed'
+        self.booking1.save()
+        self.client.login(username='pay_customer_1', password='password123')
+        response = self.client.get(reverse('booking_receipt', kwargs={'booking_id': self.booking1.id}))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, 'GSTIN')
+        self.assertNotContains(response, 'Tax Invoice')
+
+    # 26. Provider UPI ID is not publicly exposed
+    def test_provider_upi_id_not_publicly_exposed(self):
+        response = self.client.get(reverse('provider_profile', kwargs={'id': self.provider_profile1.id}))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, 'suresh@okhdfcbank')
+
+    # 27. Payout status cannot be marked paid incorrectly
+    def test_payout_status_cannot_be_marked_paid_incorrectly(self):
+        settlement = PaymentService.create_provider_settlement(self.booking1)
+        self.assertEqual(settlement.status, 'pending')
+        self.assertNotEqual(settlement.status, 'paid')
+
+    # 28. Existing commission idempotency remains intact
+    def test_existing_commission_idempotency_remains_intact(self):
+        self.client.login(username='pay_provider_1', password='password123')
+        self.booking1.status = 'accepted'
+        self.booking1.save()
+
+        # Complete booking
+        self.client.post(reverse('provider_job_complete', kwargs={'booking_id': self.booking1.id}))
+        count1 = RevenueTransaction.objects.filter(booking=self.booking1, revenue_type='commission').count()
+        self.assertEqual(count1, 1)
+
+        # Try completing again (should be rejected/prevented)
+        self.client.post(reverse('provider_job_complete', kwargs={'booking_id': self.booking1.id}))
+        count2 = RevenueTransaction.objects.filter(booking=self.booking1, revenue_type='commission').count()
+        self.assertEqual(count2, 1)
+
+    # 29. Existing booking lifecycle remains intact
+    def test_existing_booking_lifecycle_remains_intact(self):
+        self.assertEqual(self.booking1.status, 'pending')
+        self.client.login(username='pay_provider_1', password='password123')
+        self.client.post(reverse('provider_job_accept', kwargs={'booking_id': self.booking1.id}))
+        self.booking1.refresh_from_db()
+        self.assertEqual(self.booking1.status, 'accepted')
+
+    # 30. Webhook signature verification rejects invalid signatures
+    def test_webhook_signature_verification_rejects_invalid(self):
+        payload = b'{"event": "payment.captured"}'
+        response = self.client.post(
+            reverse('payment_webhook'),
+            data=payload,
+            content_type='application/json',
+            HTTP_X_PAYMENT_SIGNATURE='invalid_tampered_signature_123'
+        )
+        self.assertEqual(response.status_code, 400)
+
 
 
 

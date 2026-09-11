@@ -18,9 +18,14 @@
         <h1 style="font-size: 2rem; margin-bottom: 4px;">My Bookings</h1>
         <p class="text-sm">Manage and track your home service appointments and past completed jobs.</p>
       </div>
-      <a href="{% url 'service_list' %}" class="btn btn-primary btn-sm">
-        + Book New Service
-      </a>
+      <div style="display: flex; gap: 10px;">
+        <a href="{% url 'customer_payment_history' %}" class="btn btn-outline btn-sm">
+          💳 Payment History
+        </a>
+        <a href="{% url 'service_list' %}" class="btn btn-primary btn-sm">
+          + Book New Service
+        </a>
+      </div>
     </div>
 
     {% if bookings %}
@@ -76,9 +81,24 @@
                   {% else %}
                     <span class="badge">{{ b.get_status_display }}</span>
                   {% endif %}
+
+                  {% if b.payment_status == 'paid' %}
+                    <span class="badge" style="background: #ECFDF5; color: #059669; font-size: 0.72rem; margin-top: 4px; display: inline-block;">✓ Paid</span>
+                  {% elif b.payment_status == 'failed' %}
+                    <span class="badge" style="background: #FEF2F2; color: #DC2626; font-size: 0.72rem; margin-top: 4px; display: inline-block;">Failed</span>
+                  {% elif b.payment_status == 'refunded' %}
+                    <span class="badge" style="background: #F3F4F6; color: #6B7280; font-size: 0.72rem; margin-top: 4px; display: inline-block;">Refunded</span>
+                  {% else %}
+                    <span class="badge" style="background: #FFFBEB; color: #D97706; font-size: 0.72rem; margin-top: 4px; display: inline-block;">Unpaid</span>
+                  {% endif %}
                 </td>
                 <td style="text-align: right;">
                   <div style="display: inline-flex; align-items: center; gap: 8px;">
+                    {% if b.payment_status != 'paid' and b.status == 'pending' or b.status == 'accepted' %}
+                      <a href="{% url 'checkout' b.id %}" class="btn btn-primary btn-sm" style="background: #0D6EFD; border-color: #0D6EFD; padding: 4px 10px; font-size: 0.78rem;">
+                        💳 Pay
+                      </a>
+                    {% endif %}
                     {% if b.status == 'completed' %}
                       {% if b.review %}
                         <span style="background: rgba(245, 158, 11, 0.1); color: #D97706; font-size: 0.75rem; font-weight: 800; padding: 4px 10px; border-radius: 9999px;">

@@ -1,0 +1,243 @@
+{% extends "platform/base_platform.html" %}
+
+{% block title %}Payments & Settlements Console – Servora Admin{% endblock %}
+
+{% block platform_content %}
+<div class="revenue-topbar" style="margin-bottom: 2rem;">
+  <div>
+    <h1 style="font-size: 1.85rem; font-weight: 800; color: #1E293B; margin: 0 0 0.5rem;">
+      Payment Gateway & Settlement Console
+    </h1>
+    <p style="color: #64748B; margin: 0;">
+      Real-time transaction authorization ledger, 10% marketplace commission splits, and provider 90% disbursement logs.
+    </p>
+  </div>
+  <div style="display: flex; gap: 10px;">
+    <span style="background: #EFF6FF; color: #2563EB; border: 1px solid #BFDBFE; padding: 8px 16px; border-radius: 9999px; font-weight: 800; font-size: 0.82rem; display: flex; align-items: center; gap: 6px;">
+      <span style="width: 8px; height: 8px; border-radius: 50%; background: #2563EB;"></span>
+      Test Gateway Active
+    </span>
+  </div>
+</div>
+
+<!-- 4 Financial Breakdown Cards -->
+<div class="stream-breakdown-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 2rem;">
+  <!-- Gross Booking Value -->
+  <div class="stream-card stream-card-border-blue">
+    <div class="stream-header">
+      <span class="stream-title">Gross Booking Value</span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0D6EFD" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+    </div>
+    <div class="stream-amount">₹{{ gross_booking_value|floatformat:2 }}</div>
+    <div class="stream-meta">Customer paid transaction volume</div>
+  </div>
+
+  <!-- Servora 10% Commission -->
+  <div class="stream-card stream-card-border-coral">
+    <div class="stream-header">
+      <span class="stream-title">Platform Fee (10%)</span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FF5A36" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+    </div>
+    <div class="stream-amount" style="color: #FF5A36;">₹{{ platform_commission|floatformat:2 }}</div>
+    <div class="stream-meta">Retained marketplace revenue</div>
+  </div>
+
+  <!-- Provider Payout Total -->
+  <div class="stream-card stream-card-border-purple">
+    <div class="stream-header">
+      <span class="stream-title">Provider Share (90%)</span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
+    </div>
+    <div class="stream-amount" style="color: #10B981;">₹{{ provider_payout_total|floatformat:2 }}</div>
+    <div class="stream-meta">Disbursable professional earnings</div>
+  </div>
+
+  <!-- Pending Settlements -->
+  <div class="stream-card" style="border-top: 4px solid #F59E0B;">
+    <div class="stream-header">
+      <span class="stream-title">Pending Settlement</span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+    </div>
+    <div class="stream-amount" style="color: #D97706;">₹{{ pending_settlements_amount|floatformat:2 }}</div>
+    <div class="stream-meta">Batch payouts in preparation</div>
+  </div>
+</div>
+
+<!-- Gateway Payment Status Breakdown Row -->
+<div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 2rem;">
+  <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 16px; text-align: center;">
+    <div style="font-size: 1.5rem; font-weight: 800; color: #10B981;">{{ successful_count }}</div>
+    <div style="font-size: 0.8rem; color: #64748B; font-weight: 700; text-transform: uppercase; margin-top: 4px;">Captured / Paid</div>
+  </div>
+  <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 16px; text-align: center;">
+    <div style="font-size: 1.5rem; font-weight: 800; color: #DC2626;">{{ failed_count }}</div>
+    <div style="font-size: 0.8rem; color: #64748B; font-weight: 700; text-transform: uppercase; margin-top: 4px;">Failed / Declined</div>
+  </div>
+  <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 16px; text-align: center;">
+    <div style="font-size: 1.5rem; font-weight: 800; color: #F59E0B;">{{ pending_count }}</div>
+    <div style="font-size: 0.8rem; color: #64748B; font-weight: 700; text-transform: uppercase; margin-top: 4px;">Created / Pending</div>
+  </div>
+  <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 16px; text-align: center;">
+    <div style="font-size: 1.5rem; font-weight: 800; color: #6B7280;">{{ refunded_count }}</div>
+    <div style="font-size: 0.8rem; color: #64748B; font-weight: 700; text-transform: uppercase; margin-top: 4px;">Refunded</div>
+  </div>
+</div>
+
+<!-- Section: Customer Payment Transactions -->
+<div class="dashboard-card" style="margin-bottom: 2rem;">
+  <div class="dashboard-card-header">
+    <div class="dashboard-card-title">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0D6EFD" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
+      <span>Customer Payment Gateway Transactions</span>
+    </div>
+    <span style="font-size: 0.85rem; font-weight: 700; color: #64748B;">
+      {{ total_payments_count }} Total Records
+    </span>
+  </div>
+
+  {% if payments %}
+    <div class="provider-table-wrapper" style="border: none;">
+      <table class="provider-table">
+        <thead>
+          <tr>
+            <th>Date / ID</th>
+            <th>Gateway Ref</th>
+            <th>Customer</th>
+            <th>Service & Provider</th>
+            <th>Method</th>
+            <th>Amount</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in payments %}
+            <tr>
+              <td>
+                <div style="font-weight: 700; color: #1E293B;">#PAY{{ p.id:04d }}</div>
+                <div style="font-size: 0.78rem; color: #64748B;">{{ p.created_at|date:"d M Y, h:i A" }}</div>
+              </td>
+              <td>
+                <div style="font-family: monospace; font-size: 0.82rem; font-weight: 700; color: #334155;">
+                  {{ p.gateway_payment_id|default:p.gateway_order_id }}
+                </div>
+              </td>
+              <td>
+                <div style="font-weight: 600;">{{ p.customer.get_full_name|default:p.customer.username }}</div>
+              </td>
+              <td>
+                <div style="font-weight: 700; color: #1E293B;">{{ p.booking.service.title }}</div>
+                <div style="font-size: 0.78rem; color: #64748B;">Pro: {{ p.provider.user.username }}</div>
+              </td>
+              <td>
+                <span style="display: inline-block; padding: 2px 8px; background: #F1F5F9; border-radius: 6px; font-weight: 700; font-size: 0.78rem; color: #475569;">
+                  {{ p.get_payment_method_display }}
+                </span>
+              </td>
+              <td>
+                <strong style="color: #0F172A;">₹{{ p.amount|floatformat:2 }}</strong>
+              </td>
+              <td>
+                {% if p.status == 'captured' %}
+                  <span class="badge-status-completed" style="background: #ECFDF5; color: #059669;">Captured</span>
+                {% elif p.status == 'failed' %}
+                  <span class="badge" style="background: #FEF2F2; color: #DC2626;">Failed</span>
+                {% elif p.status == 'refunded' %}
+                  <span class="badge" style="background: #F3F4F6; color: #6B7280;">Refunded</span>
+                {% else %}
+                  <span class="badge" style="background: #FFFBEB; color: #D97706;">{{ p.get_status_display }}</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div style="text-align: center; padding: 2.5rem; color: #94A3B8;">
+      No gateway transactions recorded yet.
+    </div>
+  {% endif %}
+</div>
+
+<!-- Section: Provider Settlement Ledger -->
+<div class="dashboard-card">
+  <div class="dashboard-card-header">
+    <div class="dashboard-card-title">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect></svg>
+      <span>Provider Settlements (90% Payout Ledger)</span>
+    </div>
+    <span style="font-size: 0.85rem; font-weight: 700; color: #64748B;">
+      {{ settlements.count }} Records
+    </span>
+  </div>
+
+  {% if settlements %}
+    <div class="provider-table-wrapper" style="border: none;">
+      <table class="provider-table">
+        <thead>
+          <tr>
+            <th>Settlement ID</th>
+            <th>Provider</th>
+            <th>Booking</th>
+            <th>Gross Value</th>
+            <th>Platform 10%</th>
+            <th>Net Payout</th>
+            <th>Status</th>
+            <th>Disbursement Ref</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in settlements %}
+            <tr>
+              <td>
+                <div style="font-weight: 700; color: #1E293B;">#SET{{ s.id:04d }}</div>
+                <div style="font-size: 0.78rem; color: #64748B;">{{ s.created_at|date:"d M Y" }}</div>
+              </td>
+              <td>
+                <div style="font-weight: 600; color: #1E293B;">{{ s.provider.user.get_full_name|default:s.provider.user.username }}</div>
+                <div style="font-size: 0.78rem; color: #64748B;">UPI: {{ s.provider.payout_upi_id|default:"Not Configured" }}</div>
+              </td>
+              <td>
+                <a href="{% url 'booking_detail' s.booking.id %}" style="font-weight: 700; color: #0D6EFD;">
+                  #SVR{{ s.booking.id:05d }}
+                </a>
+              </td>
+              <td>
+                <span style="color: #64748B; font-weight: 600;">₹{{ s.gross_amount|floatformat:2 }}</span>
+              </td>
+              <td>
+                <span style="color: #DC2626; font-weight: 600;">₹{{ s.commission_amount|floatformat:2 }}</span>
+              </td>
+              <td>
+                <strong style="color: #10B981; font-size: 1rem;">₹{{ s.payout_amount|floatformat:2 }}</strong>
+              </td>
+              <td>
+                {% if s.status == 'paid' %}
+                  <span class="badge-status-completed" style="background: #ECFDF5; color: #059669;">Settled</span>
+                {% elif s.status == 'pending' %}
+                  <span class="badge-status-pending" style="background: #FFFBEB; color: #D97706;">Pending</span>
+                {% elif s.status == 'refunded' %}
+                  <span class="badge" style="background: #F3F4F6; color: #6B7280;">Refunded</span>
+                {% else %}
+                  <span class="badge">{{ s.get_status_display }}</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if s.payout_reference %}
+                  <span style="font-family: monospace; font-size: 0.8rem; font-weight: 700;">{{ s.payout_reference }}</span>
+                {% else %}
+                  <span style="color: #94A3B8; font-size: 0.8rem; font-style: italic;">Unsettled</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div style="text-align: center; padding: 2.5rem; color: #94A3B8;">
+      No settlements generated yet.
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
