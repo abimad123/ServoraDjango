@@ -20,16 +20,36 @@
   </div>
 </div>
 
-<!-- 4 Financial Breakdown Cards -->
-<div class="stream-breakdown-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 2rem;">
+<!-- Financial Breakdown Cards -->
+<div class="stream-breakdown-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 2rem;">
   <!-- Gross Booking Value -->
   <div class="stream-card stream-card-border-blue">
     <div class="stream-header">
-      <span class="stream-title">Gross Booking Value</span>
+      <span class="stream-title">Gross Volume (GBV)</span>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0D6EFD" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
     </div>
     <div class="stream-amount">₹{{ gross_booking_value|floatformat:2 }}</div>
-    <div class="stream-meta">Customer paid transaction volume</div>
+    <div class="stream-meta">Total customer paid volume</div>
+  </div>
+
+  <!-- Service Revenue Basis -->
+  <div class="stream-card" style="border-top: 4px solid #3B82F6;">
+    <div class="stream-header">
+      <span class="stream-title">Service Labor Basis</span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path></svg>
+    </div>
+    <div class="stream-amount" style="color: #1E40AF;">₹{{ service_revenue_basis|floatformat:2 }}</div>
+    <div class="stream-meta">Commissionable service volume</div>
+  </div>
+
+  <!-- Materials Reimbursements -->
+  <div class="stream-card" style="border-top: 4px solid #D97706;">
+    <div class="stream-header">
+      <span class="stream-title">Material Reimbursements</span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+    </div>
+    <div class="stream-amount" style="color: #B45309;">₹{{ materials_reimbursements_total|floatformat:2 }}</div>
+    <div class="stream-meta">100% passed to providers (0% fee)</div>
   </div>
 
   <!-- Servora 10% Commission -->
@@ -39,27 +59,27 @@
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FF5A36" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
     </div>
     <div class="stream-amount" style="color: #FF5A36;">₹{{ platform_commission|floatformat:2 }}</div>
-    <div class="stream-meta">Retained marketplace revenue</div>
+    <div class="stream-meta">10% on service labor only</div>
   </div>
 
   <!-- Provider Payout Total -->
   <div class="stream-card stream-card-border-purple">
     <div class="stream-header">
-      <span class="stream-title">Provider Share (90%)</span>
+      <span class="stream-title">Provider Share</span>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
     </div>
     <div class="stream-amount" style="color: #10B981;">₹{{ provider_payout_total|floatformat:2 }}</div>
-    <div class="stream-meta">Disbursable professional earnings</div>
+    <div class="stream-meta">90% service + 100% materials</div>
   </div>
 
-  <!-- Pending Settlements -->
+  <!-- Pending Material Approvals -->
   <div class="stream-card" style="border-top: 4px solid #F59E0B;">
     <div class="stream-header">
-      <span class="stream-title">Pending Settlement</span>
+      <span class="stream-title">Pending Approvals</span>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
     </div>
-    <div class="stream-amount" style="color: #D97706;">₹{{ pending_settlements_amount|floatformat:2 }}</div>
-    <div class="stream-meta">Batch payouts in preparation</div>
+    <div class="stream-amount" style="color: #D97706;">{{ pending_material_approvals_count }}</div>
+    <div class="stream-meta">Material items awaiting review</div>
   </div>
 </div>
 
@@ -82,6 +102,7 @@
     <div style="font-size: 0.8rem; color: #64748B; font-weight: 700; text-transform: uppercase; margin-top: 4px;">Refunded</div>
   </div>
 </div>
+
 
 <!-- Section: Customer Payment Transactions -->
 <div class="dashboard-card" style="margin-bottom: 2rem;">

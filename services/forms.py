@@ -1,7 +1,7 @@
 from django import forms
 from datetime import date, datetime, time
 from decimal import Decimal
-from .models import Booking, Service, Review
+from .models import Booking, Service, Review, BookingMaterial
 
 # Pre-defined allowable time slots matching the UI design specs
 ALLOWED_TIME_SLOTS = [
@@ -259,6 +259,71 @@ class ProviderPayoutSettingsForm(forms.Form):
         if len(name) < 2:
             raise forms.ValidationError("Please provide the full registered beneficiary name.")
         return name
+
+
+class BookingMaterialForm(forms.ModelForm):
+    """
+    Form for service providers to propose on-the-job physical materials or parts.
+    Enforces positive quantity, minimum unit price, and file security checks.
+    """
+    class Meta:
+        model = BookingMaterial
+        fields = ['name', 'description', 'quantity', 'unit_price', 'receipt_image']
+        widgets = {
+            'name': forms.TextInput(attrs={
+                'class': 'form-input',
+                'placeholder': 'e.g. 1-Inch PVC Pipe (3m), Brass Angle Valve, Sealant',
+                'required': True,
+            }),
+            'description': forms.Textarea(attrs={
+                'class': 'form-textarea',
+                'rows': 2,
+                'placeholder': 'Specification, brand name, reason for replacement...',
+            }),
+            'quantity': forms.NumberInput(attrs={
+                'class': 'form-input',
+                'min': '1',
+                'step': '1',
+                'value': '1',
+                'required': True,
+            }),
+            'unit_price': forms.NumberInput(attrs={
+                'class': 'form-input',
+                'min': '1.00',
+                'step': '1.00',
+                'placeholder': 'Price per unit in ₹',
+                'required': True,
+            }),
+            'receipt_image': forms.FileInput(attrs={
+                'class': 'form-input-file',
+                'accept': '.jpg,.jpeg,.png,.webp,.pdf',
+            }),
+        }
+
+    def clean_quantity(self):
+        qty = self.cleaned_data.get('quantity')
+        if not qty or qty < 1:
+            raise forms.ValidationError("Quantity must be at least 1 unit.")
+        return qty
+
+    def clean_unit_price(self):
+        price = self.cleaned_data.get('unit_price')
+        if not price or price <= Decimal('0.00'):
+            raise forms.ValidationError("Unit price must be greater than ₹0.00.")
+        return price
+
+    def clean_receipt_image(self):
+        receipt = self.cleaned_data.get('receipt_image')
+        if receipt:
+            import os
+            ext = os.path.splitext(receipt.name)[1].lower()
+            allowed = ['.jpg', '.jpeg', '.png', '.webp', '.pdf']
+            if ext not in allowed:
+                raise forms.ValidationError(f"Invalid file format '{ext}'. Allowed formats: JPG, PNG, WEBP, PDF.")
+            if receipt.size > 5 * 1024 * 1024:
+                raise forms.ValidationError("Receipt file size cannot exceed 5MB.")
+        return receipt
+
 
 
 

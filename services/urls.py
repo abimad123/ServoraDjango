@@ -56,6 +56,15 @@ urlpatterns = [
     path('provider/payout-settings/', views.provider_payout_settings_view, name='provider_payout_settings'),
     path('provider/settlements/', views.provider_settlements_view, name='provider_settlements'),
 
+    # Stage 8B: Dynamic Pricing & Materials Workflow Routes
+    path('provider/bookings/<int:booking_id>/materials/', views.provider_booking_materials_view, name='provider_booking_materials'),
+    path('provider/bookings/<int:booking_id>/materials/add/', views.provider_add_material_view, name='provider_add_material'),
+    path('provider/materials/<int:material_id>/edit/', views.provider_edit_material_view, name='provider_edit_material'),
+    path('provider/materials/<int:material_id>/delete/', views.provider_delete_material_view, name='provider_delete_material'),
+    path('materials/<int:material_id>/receipt/', views.secure_material_receipt_view, name='secure_material_receipt'),
+    path('my-bookings/<int:booking_id>/materials/approve/', views.customer_approve_materials_view, name='customer_approve_materials'),
+    path('my-bookings/<int:booking_id>/materials/reject/', views.customer_reject_materials_view, name='customer_reject_materials'),
+
     # Academic requirements: JSON API and re_path
     path('api/services/', views.api_services_list, name='api_services_list'),
     re_path(r'^archive/(?P<year>[0-9]{4})/(?P<month>[0-9]{2})/$', views.archive_bookings_view, name='archive_bookings'),

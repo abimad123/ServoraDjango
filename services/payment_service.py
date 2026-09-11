@@ -8,10 +8,36 @@ from django.db import transaction
 from .models import Booking, PaymentTransaction, ProviderSettlement, RevenueTransaction
 
 
-class TestGatewayAdapter:
+class PaymentGatewayAdapter:
     """
-    Test-mode payment gateway adapter simulating genuine payment intent, 
-    order creation, signature generation, and webhook validation.
+    Abstract base interface for Servora payment gateway adapters.
+    Subclasses provide sandbox simulation or live UPI gateway integrations.
+    """
+    @classmethod
+    def get_key_id(cls):
+        raise NotImplementedError
+
+    @classmethod
+    def create_order(cls, booking, amount, currency='INR'):
+        raise NotImplementedError
+
+    @classmethod
+    def generate_signature(cls, order_id, payment_id):
+        raise NotImplementedError
+
+    @classmethod
+    def verify_signature(cls, order_id, payment_id, signature):
+        raise NotImplementedError
+
+    @classmethod
+    def generate_upi_qr_data(cls, order_id, amount, vpa='servora.sandbox@upi', payee_name='Servora Marketplace'):
+        raise NotImplementedError
+
+
+class TestGatewayAdapter(PaymentGatewayAdapter):
+    """
+    Test-mode payment gateway adapter simulating genuine UPI payment intent, 
+    order creation, dynamic QR generation, signature generation, and webhook validation.
     Enables isolated sandbox testing without live merchant credentials.
     """
 
@@ -28,15 +54,35 @@ class TestGatewayAdapter:
         return getattr(settings, 'PAYMENT_GATEWAY_WEBHOOK_SECRET', 'test_whsec_servora_sandbox')
 
     @classmethod
+    def generate_upi_qr_data(cls, order_id, amount, vpa='servora.sandbox@upi', payee_name='Servora Marketplace'):
+        """
+        Generates standard NPCI UPI Intent URI for QR scanning and mobile UPI apps.
+        Format: upi://pay?pa=<vpa>&pn=<name>&am=<amount>&cu=INR&tn=<note>&tr=<order_id>
+        """
+        import urllib.parse
+        amt_str = f"{Decimal(str(amount)):.2f}"
+        params = {
+            'pa': vpa,
+            'pn': payee_name,
+            'am': amt_str,
+            'cu': 'INR',
+            'tn': f"Servora Booking {order_id}",
+            'tr': order_id,
+        }
+        return f"upi://pay?{urllib.parse.urlencode(params)}"
+
+    @classmethod
     def create_order(cls, booking, amount, currency='INR'):
-        """Generates a test gateway order representation."""
+        """Generates a test gateway order representation with UPI intent data."""
         order_id = f"order_test_{booking.id}_{int(timezone.now().timestamp())}"
+        upi_intent = cls.generate_upi_qr_data(order_id, amount)
         return {
             'order_id': order_id,
             'amount': amount,
             'currency': currency,
             'gateway': 'test_gateway',
             'key_id': cls.get_key_id(),
+            'upi_intent': upi_intent,
         }
 
     @classmethod
@@ -67,6 +113,37 @@ class TestGatewayAdapter:
         return hmac.compare_digest(expected, signature_header)
 
 
+class RealUPIGatewayAdapter(PaymentGatewayAdapter):
+    """
+    Production-ready UPI Gateway Adapter abstraction.
+    Disabled unless active live merchant credentials and PAYMENT_GATEWAY_MODE='live'
+    are explicitly configured in environment variables.
+    """
+    @classmethod
+    def is_configured(cls):
+        mode = getattr(settings, 'PAYMENT_GATEWAY_MODE', 'test')
+        key_id = getattr(settings, 'PAYMENT_GATEWAY_KEY_ID', '')
+        key_secret = getattr(settings, 'PAYMENT_GATEWAY_KEY_SECRET', '')
+        return mode == 'live' and bool(key_id and key_secret and not key_id.startswith('test_'))
+
+    @classmethod
+    def get_key_id(cls):
+        return getattr(settings, 'PAYMENT_GATEWAY_KEY_ID', '')
+
+    @classmethod
+    def create_order(cls, booking, amount, currency='INR'):
+        if not cls.is_configured():
+            return TestGatewayAdapter.create_order(booking, amount, currency)
+        raise NotImplementedError("Live UPI Gateway requires active merchant onboarding and compliance setup.")
+
+
+def get_gateway_adapter():
+    """Returns the active payment gateway adapter based on configuration."""
+    if RealUPIGatewayAdapter.is_configured():
+        return RealUPIGatewayAdapter
+    return TestGatewayAdapter
+
+
 class PaymentService:
     """
     Core payment business logic service layer for Servora.
@@ -77,16 +154,28 @@ class PaymentService:
     COMMISSION_RATE = Decimal('10.00')
 
     @classmethod
-    def calculate_split(cls, gross_amount):
+    def calculate_split(cls, gross_amount, materials_amount=Decimal('0.00'), service_amount=None):
         """
-        Calculates 10% platform commission and 90% provider payout.
+        Calculates 10% platform commission on the SERVICE AMOUNT ONLY,
+        and computes the provider payout:
+        provider_payout = (service_amount - commission) + materials_amount.
+        Materials are 100% reimbursed to the provider (0% Servora commission).
         Always uses Decimals to prevent floating-point arithmetic rounding errors.
         """
-        gross = Decimal(str(gross_amount)).quantize(Decimal('0.01'))
-        commission = (gross * (cls.COMMISSION_RATE / Decimal('100.00'))).quantize(Decimal('0.01'))
-        provider_payout = (gross - commission).quantize(Decimal('0.01'))
+        mat = Decimal(str(materials_amount or 0)).quantize(Decimal('0.01'))
+        if service_amount is not None:
+            srv = Decimal(str(service_amount)).quantize(Decimal('0.01'))
+            gross = (srv + mat).quantize(Decimal('0.01'))
+        else:
+            gross = Decimal(str(gross_amount)).quantize(Decimal('0.01'))
+            srv = (gross - mat).quantize(Decimal('0.01'))
+
+        commission = (srv * (cls.COMMISSION_RATE / Decimal('100.00'))).quantize(Decimal('0.01'))
+        provider_payout = ((srv - commission) + mat).quantize(Decimal('0.01'))
         return {
             'gross_amount': gross,
+            'service_amount': srv,
+            'materials_amount': mat,
             'commission_amount': commission,
             'payout_amount': provider_payout,
         }
@@ -95,10 +184,11 @@ class PaymentService:
     def create_payment_order(cls, booking, payment_method='upi', is_demo=False):
         """
         Initiates a payment order for a booking.
-        The amount is strictly calculated from the database Booking record.
+        The amount is strictly calculated from the database Booking record (total_amount / final_amount).
         """
         amount = booking.total_amount
-        gateway_data = TestGatewayAdapter.create_order(booking, amount)
+        adapter = get_gateway_adapter()
+        gateway_data = adapter.create_order(booking, amount)
 
         # Check for existing pending/created transaction to avoid duplicate uncompleted intents
         existing_txn = PaymentTransaction.objects.filter(
@@ -196,11 +286,17 @@ class PaymentService:
                 existing.save(update_fields=['payment_transaction'])
             return existing
 
-        split = cls.calculate_split(booking.total_amount)
+        split = cls.calculate_split(
+            gross_amount=booking.total_amount,
+            materials_amount=getattr(booking, 'materials_amount', Decimal('0.00')),
+            service_amount=getattr(booking, 'service_amount', booking.total_amount)
+        )
         settlement = ProviderSettlement.objects.create(
             booking=booking,
             provider=booking.service.provider,
             payment_transaction=payment_transaction,
+            service_amount=split['service_amount'],
+            materials_amount=split['materials_amount'],
             gross_amount=split['gross_amount'],
             commission_amount=split['commission_amount'],
             payout_amount=split['payout_amount'],

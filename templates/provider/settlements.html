@@ -6,7 +6,7 @@
 <div class="provider-topbar">
   <div class="provider-greeting">
     <h1>Provider Settlement Ledger</h1>
-    <p>Track automated settlement transfers for completed jobs after deducting the 10% platform fee.</p>
+    <p>Track automated settlement transfers for completed jobs after deducting the 10% platform fee on services (0% fee on materials).</p>
   </div>
   <a href="{% url 'provider_payout_settings' %}" class="btn btn-outline" style="font-size: 0.88rem; font-weight: 700;">
     ⚙ Payout Settings
@@ -43,31 +43,31 @@
     </div>
   </div>
 
-  <!-- Gross Booking Value -->
+  <!-- Service Basis -->
   <div class="provider-stat-card">
     <div class="stat-card-header">
-      <span class="stat-card-title">Gross Volume</span>
+      <span class="stat-card-title">Service Earnings</span>
       <div class="stat-icon-wrapper stat-icon-blue">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
       </div>
     </div>
-    <div class="stat-card-value">₹{{ gross_total|floatformat:2 }}</div>
+    <div class="stat-card-value">₹{{ service_total|floatformat:2 }}</div>
     <div class="stat-card-footer">
-      <span>Total customer paid</span>
+      <span>Service labor volume</span>
     </div>
   </div>
 
-  <!-- Total Platform Commission Retained -->
+  <!-- Materials Reimbursement -->
   <div class="provider-stat-card">
     <div class="stat-card-header">
-      <span class="stat-card-title">Servora Fee (10%)</span>
+      <span class="stat-card-title">Materials Reimbursement</span>
       <div class="stat-icon-wrapper stat-icon-purple">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"></path><line x1="12" y1="18" x2="12" y2="22"></line><line x1="12" y1="2" x2="12" y2="6"></line></svg>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
       </div>
     </div>
-    <div class="stat-card-value">₹{{ commission_total|floatformat:2 }}</div>
+    <div class="stat-card-value">₹{{ materials_total|floatformat:2 }}</div>
     <div class="stat-card-footer">
-      <span>Platform service commission</span>
+      <span>100% reimbursed (0% fee)</span>
     </div>
   </div>
 </div>
@@ -91,10 +91,10 @@
           <tr>
             <th>Created Date</th>
             <th>Booking & Service</th>
-            <th>Customer</th>
-            <th>Gross Value</th>
-            <th>Platform Fee (10%)</th>
-            <th>Net Payout (90%)</th>
+            <th>Service Charge</th>
+            <th>Materials (100%)</th>
+            <th>Servora Fee (10%)</th>
+            <th>Net Take-Home</th>
             <th>Disbursement Status</th>
             <th>Transfer Reference</th>
           </tr>
@@ -111,39 +111,41 @@
                 <div style="font-size: 0.78rem; color: #64748B;">#SVR{{ s.booking.id|stringformat:"05d" }}</div>
               </td>
               <td>
-                <div style="font-weight: 600;">{{ s.booking.customer.get_full_name|default:s.booking.customer.username }}</div>
+                <span style="font-weight: 600; color: #334155;">₹{{ s.service_amount|floatformat:2 }}</span>
               </td>
               <td>
-                <span style="font-weight: 600; color: #64748B;">₹{{ s.gross_amount|floatformat:2 }}</span>
+                {% if s.materials_amount > 0 %}
+                  <span style="font-weight: 700; color: #D97706;">+ ₹{{ s.materials_amount|floatformat:2 }}</span>
+                {% else %}
+                  <span style="color: #94A3B8;">₹0.00</span>
+                {% endif %}
               </td>
               <td>
                 <span style="color: #DC2626; font-weight: 600;">- ₹{{ s.commission_amount|floatformat:2 }}</span>
               </td>
               <td>
-                <span style="font-size: 1.05rem; font-weight: 800; color: #10B981;">
+                <span style="font-weight: 800; color: #059669; font-size: 1rem;">
                   ₹{{ s.payout_amount|floatformat:2 }}
                 </span>
               </td>
               <td>
                 {% if s.status == 'paid' %}
-                  <span class="badge-status-completed" style="background: #ECFDF5; color: #059669;">Settled</span>
-                {% elif s.status == 'pending' %}
-                  <span class="badge-status-pending" style="background: #FFFBEB; color: #D97706;">Pending</span>
+                  <span class="badge-status-completed" style="font-size: 0.75rem; padding: 4px 10px;">✓ Disbursed</span>
                 {% elif s.status == 'processing' %}
-                  <span class="badge" style="background: #EFF6FF; color: #2563EB;">Processing</span>
+                  <span class="badge-status-accepted" style="font-size: 0.75rem; padding: 4px 10px;">Processing</span>
                 {% elif s.status == 'refunded' %}
-                  <span class="badge" style="background: #F3F4F6; color: #6B7280;">Refunded</span>
+                  <span class="badge-status-cancelled" style="font-size: 0.75rem; padding: 4px 10px;">Refunded</span>
+                {% elif s.status == 'failed' %}
+                  <span class="badge-status-declined" style="font-size: 0.75rem; padding: 4px 10px;">Failed</span>
                 {% else %}
-                  <span class="badge">{{ s.get_status_display }}</span>
+                  <span class="badge-status-pending" style="font-size: 0.75rem; padding: 4px 10px;">Pending</span>
                 {% endif %}
               </td>
               <td>
                 {% if s.payout_reference %}
-                  <span style="font-family: monospace; font-size: 0.8rem; font-weight: 700; color: #1E293B;">
-                    {{ s.payout_reference }}
-                  </span>
+                  <code style="font-size: 0.78rem; background: #F1F5F9; padding: 2px 6px; border-radius: 4px;">{{ s.payout_reference }}</code>
                 {% else %}
-                  <span style="color: #94A3B8; font-size: 0.82rem; font-style: italic;">Batch Pending</span>
+                  <span style="color: #94A3B8; font-size: 0.8rem;">Pending Batch</span>
                 {% endif %}
               </td>
             </tr>
@@ -152,10 +154,14 @@
       </table>
     </div>
   {% else %}
-    <div style="text-align: center; padding: 3rem 1.5rem; color: #94A3B8;">
-      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 0.75rem;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-      <p style="font-size: 0.95rem; font-weight: 600; margin: 0;">No settlements generated yet</p>
-      <p style="font-size: 0.85rem; margin-top: 0.25rem;">When customers pay for bookings, your 90% disbursement ledger entries will appear here.</p>
+    <div style="padding: 40px; text-align: center;">
+      <div style="width: 56px; height: 56px; border-radius: 50%; background: #F1F5F9; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; font-size: 1.5rem;">
+        💳
+      </div>
+      <h3 style="font-size: 1.1rem; font-weight: 700; color: #1E293B; margin-bottom: 6px;">No Settlement Records Yet</h3>
+      <p style="color: #64748B; font-size: 0.9rem; max-width: 440px; margin: 0 auto;">
+        When customer bookings are completed and confirmed, your 90% service earnings plus 100% material reimbursement will appear here.
+      </p>
     </div>
   {% endif %}
 </div>

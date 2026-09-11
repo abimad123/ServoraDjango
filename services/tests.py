@@ -4,7 +4,7 @@ from django.contrib.auth.models import User
 from users.models import UserProfile, ProviderSubscription
 from services.models import (
     Category, Service, Booking, Review, FeaturedListing, RevenueTransaction, 
-    Notification, PaymentTransaction, ProviderSettlement
+    Notification, PaymentTransaction, ProviderSettlement, BookingMaterial
 )
 from services.payment_service import PaymentService, TestGatewayAdapter
 from datetime import date, time, timedelta
@@ -2507,6 +2507,548 @@ class PaymentAndSettlementTests(TestCase):
             HTTP_X_PAYMENT_SIGNATURE='invalid_tampered_signature_123'
         )
         self.assertEqual(response.status_code, 400)
+
+
+class DynamicPricingAndUPITests(TestCase):
+    """
+    Stage 8B Comprehensive Automated Test Suite:
+    - Dynamic Job Pricing & Materials Lifecycle
+    - Server-Side Price Calculation & Tamper Protection
+    - Customer Materials Approval & Rejection Workflows
+    - 10% Platform Commission Strictly on Service Charge (0% on Materials)
+    - 100% Provider Material Reimbursement in Settlements
+    - UPI-Only Checkout Architecture (Removal of Cards/NetBanking)
+    - UPI QR Intent Data Generation & Sandbox Payments
+    - File Security & Access Control for Purchase Receipts
+    - Notifications & Financial Ledger Integrity
+    """
+
+    def setUp(self):
+        self.client = Client()
+
+        # Provider user
+        self.provider_user = User.objects.create_user(
+            username='stage8b_provider',
+            password='password123',
+            first_name='Anand',
+            last_name='Kumar'
+        )
+        self.provider_profile = self.provider_user.profile
+        self.provider_profile.role = 'provider'
+        self.provider_profile.payout_upi_id = 'anand@okhdfcbank'
+        self.provider_profile.payout_upi_name = 'Anand Kumar'
+        self.provider_profile.payout_status = 'ready'
+        self.provider_profile.save()
+
+        # Other provider user (for cross-tenant checks)
+        self.other_provider_user = User.objects.create_user(
+            username='stage8b_other_provider',
+            password='password123'
+        )
+        self.other_provider_profile = self.other_provider_user.profile
+        self.other_provider_profile.role = 'provider'
+        self.other_provider_profile.save()
+
+        # Customer user
+        self.customer_user = User.objects.create_user(
+            username='stage8b_customer',
+            password='password123',
+            first_name='Rahul',
+            last_name='Nair'
+        )
+        self.customer_profile = self.customer_user.profile
+        self.customer_profile.role = 'customer'
+        self.customer_profile.save()
+
+        # Other customer user (for cross-tenant checks)
+        self.other_customer_user = User.objects.create_user(
+            username='stage8b_other_customer',
+            password='password123'
+        )
+        self.other_customer_profile = self.other_customer_user.profile
+        self.other_customer_profile.role = 'customer'
+        self.other_customer_profile.save()
+
+        # Staff user
+        self.staff_user = User.objects.create_superuser(
+            username='stage8b_admin',
+            password='password123',
+            email='admin@servora.local'
+        )
+
+        # Category and Service (Base Price: ₹1,000)
+        self.category = Category.objects.create(name='Plumbing Care', slug='plumbing-care', icon_name='wrench')
+        self.service = Service.objects.create(
+            provider=self.provider_profile,
+            category=self.category,
+            title='Main Line Pipe Fitting',
+            price=Decimal('1000.00'),
+            duration_estimate='2 hours',
+            location='Kannur'
+        )
+
+        # In-progress accepted booking
+        self.booking = Booking.objects.create(
+            service=self.service,
+            customer=self.customer_user,
+            booking_date=date.today() + timedelta(days=2),
+            booking_time=time(10, 0),
+            service_amount=Decimal('1000.00'),
+            total_amount=Decimal('1000.00'),
+            status='accepted',
+            payment_status='unpaid',
+            address='Fort Road, Kannur'
+        )
+
+    # 1. Material creation & server-side total_price calculation
+    def test_material_creation_server_side_calculation(self):
+        mat = BookingMaterial.objects.create(
+            booking=self.booking,
+            name='1-Inch PVC Pipe (3m)',
+            quantity=2,
+            unit_price=Decimal('150.00'),
+            added_by=self.provider_user
+        )
+        # 2 * 150.00 = 300.00 calculated strictly server-side
+        self.assertEqual(mat.total_price, Decimal('300.00'))
+        self.assertEqual(mat.status, 'pending')
+
+    # 2. Material ownership: Provider can add materials to own accepted booking
+    def test_material_ownership_provider_only(self):
+        self.client.login(username='stage8b_provider', password='password123')
+        response = self.client.post(reverse('provider_add_material', kwargs={'booking_id': self.booking.id}), {
+            'name': 'Sealant Compound',
+            'description': 'Waterproof silicone paste',
+            'quantity': 1,
+            'unit_price': '50.00',
+        })
+        self.assertEqual(response.status_code, 302)
+        mat = BookingMaterial.objects.filter(booking=self.booking, name='Sealant Compound').first()
+        self.assertIsNotNone(mat)
+        self.assertEqual(mat.total_price, Decimal('50.00'))
+
+    # 3. Other provider cannot add materials to another provider's booking
+    def test_other_provider_cannot_add_materials(self):
+        self.client.login(username='stage8b_other_provider', password='password123')
+        response = self.client.post(reverse('provider_add_material', kwargs={'booking_id': self.booking.id}), {
+            'name': 'Unauthorized Item',
+            'quantity': 1,
+            'unit_price': '100.00',
+        })
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(BookingMaterial.objects.filter(name='Unauthorized Item').exists())
+
+    # 4. Customer cannot access provider add material view
+    def test_customer_cannot_add_materials(self):
+        self.client.login(username='stage8b_customer', password='password123')
+        response = self.client.get(reverse('provider_add_material', kwargs={'booking_id': self.booking.id}))
+        # provider_required redirects non-providers to home
+        self.assertEqual(response.status_code, 302)
+
+    # 5. Quantity and unit price validations reject zero or negative inputs
+    def test_quantity_and_price_validation(self):
+        self.client.login(username='stage8b_provider', password='password123')
+        # Negative quantity
+        response = self.client.post(reverse('provider_add_material', kwargs={'booking_id': self.booking.id}), {
+            'name': 'Invalid Item',
+            'quantity': -2,
+            'unit_price': '50.00',
+        })
+        self.assertFalse(BookingMaterial.objects.filter(name='Invalid Item').exists())
+
+        # Zero unit price
+        response2 = self.client.post(reverse('provider_add_material', kwargs={'booking_id': self.booking.id}), {
+            'name': 'Zero Price Item',
+            'quantity': 1,
+            'unit_price': '0.00',
+        })
+        self.assertFalse(BookingMaterial.objects.filter(name='Zero Price Item').exists())
+
+    # 6. Multiple materials aggregation calculates correct pending materials total
+    def test_multiple_materials_aggregation(self):
+        BookingMaterial.objects.create(booking=self.booking, name='PVC Pipe', quantity=1, unit_price=Decimal('180.00'))
+        BookingMaterial.objects.create(booking=self.booking, name='Connector', quantity=1, unit_price=Decimal('70.00'))
+        BookingMaterial.objects.create(booking=self.booking, name='Sealant', quantity=1, unit_price=Decimal('50.00'))
+
+        self.assertEqual(self.booking.materials.count(), 3)
+        self.assertEqual(self.booking.pending_materials_total, Decimal('300.00'))
+        self.assertEqual(self.booking.approved_materials_total, Decimal('0.00'))
+
+    # 7. Customer approval workflow approves materials and locks new final amount
+    def test_customer_approval_workflow(self):
+        BookingMaterial.objects.create(booking=self.booking, name='PVC Pipe', quantity=1, unit_price=Decimal('180.00'))
+        BookingMaterial.objects.create(booking=self.booking, name='Connector', quantity=1, unit_price=Decimal('70.00'))
+        BookingMaterial.objects.create(booking=self.booking, name='Sealant', quantity=1, unit_price=Decimal('50.00'))
+
+        self.client.login(username='stage8b_customer', password='password123')
+        response = self.client.post(reverse('customer_approve_materials', kwargs={'booking_id': self.booking.id}))
+        self.assertEqual(response.status_code, 302)
+
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.materials_amount, Decimal('300.00'))
+        self.assertEqual(self.booking.total_amount, Decimal('1300.00'))
+        self.assertEqual(self.booking.final_amount, Decimal('1300.00'))
+        self.assertEqual(self.booking.materials.filter(status='approved').count(), 3)
+
+    # 8. Another customer cannot approve another customer's materials
+    def test_other_customer_cannot_approve_materials(self):
+        BookingMaterial.objects.create(booking=self.booking, name='PVC Pipe', quantity=1, unit_price=Decimal('180.00'))
+        self.client.login(username='stage8b_other_customer', password='password123')
+        response = self.client.post(reverse('customer_approve_materials', kwargs={'booking_id': self.booking.id}))
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(self.booking.materials.filter(status='approved').count(), 0)
+
+    # 9. Customer rejection preserves base service amount and marks materials rejected
+    def test_customer_rejection_workflow(self):
+        BookingMaterial.objects.create(booking=self.booking, name='PVC Pipe', quantity=1, unit_price=Decimal('180.00'))
+        self.client.login(username='stage8b_customer', password='password123')
+        response = self.client.post(reverse('customer_reject_materials', kwargs={'booking_id': self.booking.id}))
+        self.assertEqual(response.status_code, 302)
+
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.materials_amount, Decimal('0.00'))
+        self.assertEqual(self.booking.total_amount, Decimal('1000.00'))
+        self.assertEqual(self.booking.materials.filter(status='rejected').count(), 1)
+
+    # 10. Final amount is server-controlled and rejects client tampering
+    def test_tampered_final_amount_ignored(self):
+        self.client.login(username='stage8b_customer', password='password123')
+        response = self.client.post(reverse('payment_create', kwargs={'booking_id': self.booking.id}), {
+            'amount': '1.00',  # Malicious tampered amount
+            'payment_method': 'upi'
+        })
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        # Server must enforce actual booking.total_amount (1000.00), not the tampered 1.00
+        self.assertEqual(data['amount'], '1000.00')
+
+    # 11. Platform commission is calculated strictly on service charge (10% of 1000 = 100)
+    def test_commission_calculated_only_on_service(self):
+        self.booking.materials_amount = Decimal('300.00')
+        self.booking.save()
+        self.assertEqual(self.booking.total_amount, Decimal('1300.00'))
+        self.assertEqual(self.booking.commission_amount, Decimal('100.00'))
+
+    # 12. Materials are 100% excluded from platform commission in PaymentService.calculate_split
+    def test_materials_excluded_from_commission(self):
+        split = PaymentService.calculate_split(
+            gross_amount=Decimal('1300.00'),
+            materials_amount=Decimal('300.00'),
+            service_amount=Decimal('1000.00')
+        )
+        self.assertEqual(split['gross_amount'], Decimal('1300.00'))
+        self.assertEqual(split['service_amount'], Decimal('1000.00'))
+        self.assertEqual(split['materials_amount'], Decimal('300.00'))
+        self.assertEqual(split['commission_amount'], Decimal('100.00'))
+        self.assertEqual(split['payout_amount'], Decimal('1200.00'))
+
+    # 13. Provider payout calculation: 90% service earnings + 100% materials reimbursement
+    def test_provider_payout_calculation(self):
+        self.booking.materials_amount = Decimal('300.00')
+        self.booking.save()
+        # (1000 - 100) + 300 = 1200.00
+        self.assertEqual(self.booking.provider_earning, Decimal('1200.00'))
+
+    # 14. Checkout UI is UPI-only (No Card, No Net Banking, No Wallet)
+    def test_checkout_is_upi_only(self):
+        self.client.login(username='stage8b_customer', password='password123')
+        response = self.client.get(reverse('checkout', kwargs={'booking_id': self.booking.id}))
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode('utf-8')
+        self.assertIn('Pay Securely Using UPI', content)
+        self.assertIn('Scan UPI QR', content)
+        self.assertIn('UPI ID / VPA', content)
+        self.assertNotIn('Credit / Debit Card', content)
+        self.assertNotIn('Net Banking', content)
+
+    # 15. UPI QR intent data generation matches standard NPCI UPI format
+    def test_upi_qr_intent_generation(self):
+        order_id = 'order_test_999'
+        qr_uri = TestGatewayAdapter.generate_upi_qr_data(order_id, Decimal('1300.00'), vpa='servora.sandbox@upi')
+        self.assertTrue(qr_uri.startswith('upi://pay?'))
+        self.assertIn('pa=servora.sandbox%40upi', qr_uri)
+        self.assertIn('am=1300.00', qr_uri)
+        self.assertIn('cu=INR', qr_uri)
+
+    # 16. Successful test UPI payment marks booking paid and creates ProviderSettlement
+    def test_successful_test_upi_payment_capture(self):
+        self.booking.materials_amount = Decimal('300.00')
+        self.booking.save()
+
+        txn = PaymentService.create_payment_order(self.booking, payment_method='upi')
+        payment_id = 'pay_test_upi_captured_001'
+        sig = TestGatewayAdapter.generate_signature(txn.gateway_order_id, payment_id)
+
+        self.client.login(username='stage8b_customer', password='password123')
+        response = self.client.post(reverse('payment_success', kwargs={'booking_id': self.booking.id}), {
+            'gateway_order_id': txn.gateway_order_id,
+            'gateway_payment_id': payment_id,
+            'gateway_signature': sig,
+            'payment_method': 'upi'
+        })
+        self.assertEqual(response.status_code, 302)
+
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.payment_status, 'paid')
+
+        settlement = ProviderSettlement.objects.filter(booking=self.booking).first()
+        self.assertIsNotNone(settlement)
+        self.assertEqual(settlement.gross_amount, Decimal('1300.00'))
+        self.assertEqual(settlement.service_amount, Decimal('1000.00'))
+        self.assertEqual(settlement.materials_amount, Decimal('300.00'))
+        self.assertEqual(settlement.commission_amount, Decimal('100.00'))
+        self.assertEqual(settlement.payout_amount, Decimal('1200.00'))
+        self.assertEqual(settlement.status, 'pending')
+
+    # 17. Failed payment does not create revenue or settlement
+    def test_failed_payment_does_not_create_settlement(self):
+        self.client.login(username='stage8b_customer', password='password123')
+        response = self.client.post(reverse('payment_failed', kwargs={'booking_id': self.booking.id}), {
+            'failure_reason': 'User aborted UPI pin entry'
+        })
+        self.assertEqual(response.status_code, 302)
+
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.payment_status, 'failed')
+        self.assertEqual(ProviderSettlement.objects.filter(booking=self.booking).count(), 0)
+        self.assertEqual(RevenueTransaction.objects.filter(booking=self.booking).count(), 0)
+
+    # 18. Customer can retry payment after failure
+    def test_retry_payment_after_failure(self):
+        PaymentService.handle_payment_failure(self.booking, failure_reason='Timeout')
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.payment_status, 'failed')
+
+        # Retry and capture successfully
+        txn = PaymentService.create_payment_order(self.booking, payment_method='upi')
+        payment_id = 'pay_retry_success_999'
+        sig = TestGatewayAdapter.generate_signature(txn.gateway_order_id, payment_id)
+
+        PaymentService.verify_and_capture_payment(
+            booking=self.booking,
+            gateway_order_id=txn.gateway_order_id,
+            gateway_payment_id=payment_id,
+            gateway_signature=sig,
+            payment_method='upi'
+        )
+
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.payment_status, 'paid')
+        self.assertEqual(ProviderSettlement.objects.filter(booking=self.booking).count(), 1)
+
+    # 19. Duplicate webhook processing is idempotent
+    def test_duplicate_webhook_idempotency(self):
+        txn = PaymentService.create_payment_order(self.booking, payment_method='upi')
+        payment_id = 'pay_webhook_idem_123'
+        sig = TestGatewayAdapter.generate_signature(txn.gateway_order_id, payment_id)
+
+        import json
+        payload = json.dumps({
+            'event': 'payment.captured',
+            'payload': {
+                'payment': {
+                    'entity': {
+                        'order_id': txn.gateway_order_id,
+                        'id': payment_id,
+                        'signature': sig,
+                        'method': 'upi'
+                    }
+                }
+            }
+        }).encode('utf-8')
+        wh_sig = TestGatewayAdapter.generate_webhook_signature(payload)
+
+        # First webhook call
+        resp1 = self.client.post(reverse('payment_webhook'), data=payload, content_type='application/json', HTTP_X_PAYMENT_SIGNATURE=wh_sig)
+        self.assertEqual(resp1.status_code, 200)
+
+        # Duplicate webhook call
+        resp2 = self.client.post(reverse('payment_webhook'), data=payload, content_type='application/json', HTTP_X_PAYMENT_SIGNATURE=wh_sig)
+        self.assertEqual(resp2.status_code, 200)
+
+        # Must have exactly 1 settlement and 1 captured transaction
+        self.assertEqual(ProviderSettlement.objects.filter(booking=self.booking).count(), 1)
+        self.assertEqual(PaymentTransaction.objects.filter(booking=self.booking, status='captured').count(), 1)
+
+    # 20. Full refund refunds entire customer payment (service + approved materials)
+    def test_full_refund_includes_approved_materials(self):
+        self.booking.materials_amount = Decimal('300.00')
+        self.booking.save()
+
+        txn = PaymentService.create_payment_order(self.booking, payment_method='upi')
+        payment_id = 'pay_refund_test_777'
+        sig = TestGatewayAdapter.generate_signature(txn.gateway_order_id, payment_id)
+        PaymentService.verify_and_capture_payment(self.booking, txn.gateway_order_id, payment_id, sig)
+
+        # Process refund
+        refund_result = PaymentService.handle_refund(self.booking, reason='Service cancelled by client')
+        self.assertTrue(refund_result['success'])
+
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.payment_status, 'refunded')
+
+        settlement = ProviderSettlement.objects.filter(booking=self.booking).first()
+        self.assertEqual(settlement.status, 'refunded')
+
+        captured_txn = PaymentTransaction.objects.filter(booking=self.booking, gateway_payment_id=payment_id).first()
+        self.assertEqual(captured_txn.status, 'refunded')
+
+    # 21. Provider payout settings are private (never shown to customer)
+    def test_provider_upi_privacy_not_public(self):
+        self.client.login(username='stage8b_customer', password='password123')
+        response = self.client.get(reverse('service_detail', kwargs={'id': self.service.id}))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('anand@okhdfcbank', response.content.decode('utf-8'))
+
+    # 22. Material purchase receipt access control rejects unauthorized users
+    def test_receipt_access_control(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        test_file = SimpleUploadedFile("bill.pdf", b"%PDF-1.4 test invoice receipt content", content_type="application/pdf")
+        mat = BookingMaterial.objects.create(
+            booking=self.booking,
+            name='Valve',
+            quantity=1,
+            unit_price=Decimal('200.00'),
+            receipt_image=test_file
+        )
+
+        # Unauthorized other customer gets 403
+        self.client.login(username='stage8b_other_customer', password='password123')
+        resp_unauth = self.client.get(reverse('secure_material_receipt', kwargs={'material_id': mat.id}))
+        self.assertEqual(resp_unauth.status_code, 403)
+
+        # Authorized booking customer can access
+        self.client.login(username='stage8b_customer', password='password123')
+        resp_auth = self.client.get(reverse('secure_material_receipt', kwargs={'material_id': mat.id}))
+        self.assertEqual(resp_auth.status_code, 200)
+
+    # 23. Notification created for customer when provider adds materials
+    def test_notification_on_material_addition(self):
+        self.client.login(username='stage8b_provider', password='password123')
+        self.client.post(reverse('provider_add_material', kwargs={'booking_id': self.booking.id}), {
+            'name': 'Gasket Set',
+            'quantity': 1,
+            'unit_price': '120.00',
+        })
+        notif = Notification.objects.filter(recipient=self.customer_user, notification_type='materials_added').first()
+        self.assertIsNotNone(notif)
+        self.assertIn('Gasket Set', notif.message)
+
+    # 24. Notification created for provider when customer approves materials
+    def test_notification_on_material_approval(self):
+        BookingMaterial.objects.create(booking=self.booking, name='Filter', quantity=1, unit_price=Decimal('150.00'))
+        self.client.login(username='stage8b_customer', password='password123')
+        self.client.post(reverse('customer_approve_materials', kwargs={'booking_id': self.booking.id}))
+
+        notif = Notification.objects.filter(recipient=self.provider_user, notification_type='materials_approved').first()
+        self.assertIsNotNone(notif)
+        self.assertIn('approved material costs', notif.message)
+
+    # 25. Notification created for provider when customer rejects materials
+    def test_notification_on_material_rejection(self):
+        BookingMaterial.objects.create(booking=self.booking, name='Extra Pipe', quantity=1, unit_price=Decimal('250.00'))
+        self.client.login(username='stage8b_customer', password='password123')
+        self.client.post(reverse('customer_reject_materials', kwargs={'booking_id': self.booking.id}))
+
+        notif = Notification.objects.filter(recipient=self.provider_user, notification_type='materials_rejected').first()
+        self.assertIsNotNone(notif)
+        self.assertIn('declined the additional material costs', notif.message)
+
+    # 26. Provider cannot edit approved materials
+    def test_provider_cannot_edit_approved_materials(self):
+        mat = BookingMaterial.objects.create(booking=self.booking, name='Valve', quantity=1, unit_price=Decimal('200.00'), status='approved')
+        self.client.login(username='stage8b_provider', password='password123')
+        response = self.client.post(reverse('provider_edit_material', kwargs={'material_id': mat.id}), {
+            'name': 'Tampered Valve Name',
+            'quantity': 2,
+            'unit_price': '400.00'
+        })
+        mat.refresh_from_db()
+        self.assertEqual(mat.name, 'Valve')
+        self.assertEqual(mat.total_price, Decimal('200.00'))
+
+    # 27. Provider cannot delete approved materials
+    def test_provider_cannot_delete_approved_materials(self):
+        mat = BookingMaterial.objects.create(booking=self.booking, name='Locked Part', quantity=1, unit_price=Decimal('100.00'), status='approved')
+        self.client.login(username='stage8b_provider', password='password123')
+        self.client.post(reverse('provider_delete_material', kwargs={'material_id': mat.id}))
+        self.assertTrue(BookingMaterial.objects.filter(id=mat.id).exists())
+
+    # 28. Provider cannot add materials to a completed booking
+    def test_provider_cannot_add_materials_to_completed_booking(self):
+        self.booking.status = 'completed'
+        self.booking.save()
+        self.client.login(username='stage8b_provider', password='password123')
+        response = self.client.post(reverse('provider_add_material', kwargs={'booking_id': self.booking.id}), {
+            'name': 'Late Item',
+            'quantity': 1,
+            'unit_price': '100.00'
+        })
+        self.assertFalse(BookingMaterial.objects.filter(name='Late Item').exists())
+
+    # 29. Provider cannot add materials to a paid booking
+    def test_provider_cannot_add_materials_to_paid_booking(self):
+        self.booking.payment_status = 'paid'
+        self.booking.save()
+        self.client.login(username='stage8b_provider', password='password123')
+        response = self.client.post(reverse('provider_add_material', kwargs={'booking_id': self.booking.id}), {
+            'name': 'Post-Payment Item',
+            'quantity': 1,
+            'unit_price': '100.00'
+        })
+        self.assertFalse(BookingMaterial.objects.filter(name='Post-Payment Item').exists())
+
+    # 30. Commercial receipt accurately displays dynamic pricing breakdown
+    def test_commercial_receipt_breakdown(self):
+        self.booking.status = 'completed'
+        self.booking.payment_status = 'paid'
+        self.booking.materials_amount = Decimal('300.00')
+        self.booking.save()
+        BookingMaterial.objects.create(booking=self.booking, name='Fittings', quantity=1, unit_price=Decimal('300.00'), status='approved')
+
+        self.client.login(username='stage8b_customer', password='password123')
+        response = self.client.get(reverse('booking_receipt', kwargs={'booking_id': self.booking.id}))
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode('utf-8')
+        self.assertIn('Base Service Fee', content)
+        self.assertIn('Approved Materials', content)
+        self.assertIn('1300', content)
+
+    # 31. Provider settlement list shows materials and service amounts
+    def test_provider_settlements_ledger_view(self):
+        ProviderSettlement.objects.create(
+            booking=self.booking,
+            provider=self.provider_profile,
+            service_amount=Decimal('1000.00'),
+            materials_amount=Decimal('300.00'),
+            gross_amount=Decimal('1300.00'),
+            commission_amount=Decimal('100.00'),
+            payout_amount=Decimal('1200.00'),
+            status='pending'
+        )
+        self.client.login(username='stage8b_provider', password='password123')
+        response = self.client.get(reverse('provider_settlements'))
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode('utf-8')
+        self.assertIn('1200', content)
+        self.assertIn('300', content)
+
+    # 32. Demo revenue remains isolated from RGM verified revenue
+    def test_rgm_verified_revenue_isolation(self):
+        # Demo revenue transaction must remain demo
+        demo_rev = RevenueTransaction.objects.create(
+            revenue_type='commission',
+            amount=Decimal('100.00'),
+            provider=self.provider_profile,
+            description='Demo test commission',
+            is_demo=True,
+            status='completed',
+            verification_status='verified',
+            has_evidence=True,
+            transaction_reference='DEMO123'
+        )
+        self.assertFalse(demo_rev.is_rgm_verified)
+
 
 
 

@@ -115,25 +115,42 @@
 
     <!-- Financial Breakdown & Marketplace Split -->
     <div style="display: flex; justify-content: flex-end; margin-bottom: 2rem;">
-      <div style="width: 320px; font-size: 0.88rem;">
+      <div style="width: 360px; font-size: 0.88rem;">
         <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #F1F5F9; color: #475569;">
-          <span>Gross Service Fee Paid:</span>
-          <span style="font-weight: 700; color: #0F172A;">₹{{ booking.total_amount|floatformat:2 }}</span>
+          <span>Base Service Fee:</span>
+          <span style="font-weight: 700; color: #0F172A;">₹{{ booking.service_amount|floatformat:2 }}</span>
         </div>
+        {% if booking.materials_amount > 0 %}
+          <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #F1F5F9; color: #D97706;">
+            <span>Approved Materials & Parts:</span>
+            <span style="font-weight: 700;">+ ₹{{ booking.materials_amount|floatformat:2 }}</span>
+          </div>
+          {% if approved_materials %}
+            <div style="background: #F8FAFC; border-radius: 6px; padding: 6px 10px; margin: 4px 0 8px; font-size: 0.75rem; color: #64748B;">
+              {% for m in approved_materials %}
+                <div style="display: flex; justify-content: space-between; padding: 1px 0;">
+                  <span>• {{ m.name }} (x{{ m.quantity }})</span>
+                  <span>₹{{ m.total_price|floatformat:2 }}</span>
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endif %}
         <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #F1F5F9; color: #64748B; font-size: 0.8rem;">
-          <span>Servora Platform Commission (10%):</span>
+          <span>Servora Fee (10% of Service only):</span>
           <span>₹{{ booking.commission_amount|floatformat:2 }}</span>
         </div>
         <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #F1F5F9; color: #64748B; font-size: 0.8rem;">
-          <span>Provider Net Disbursed (90%):</span>
+          <span>Provider Net Share (90% Srv + 100% Mat):</span>
           <span>₹{{ provider_earning|floatformat:2 }}</span>
         </div>
         <div style="display: flex; justify-content: space-between; padding: 10px 0; border-top: 2px solid #0F172A; font-size: 1.1rem; font-weight: 900; color: #0F172A; margin-top: 4px;">
-          <span>Total Paid:</span>
+          <span>Total Paid (Captured):</span>
           <span style="color: #10B981;">₹{{ booking.total_amount|floatformat:2 }}</span>
         </div>
       </div>
     </div>
+
 
     <!-- Review Status if Reviewed -->
     {% if review %}

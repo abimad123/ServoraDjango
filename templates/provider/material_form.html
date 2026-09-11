@@ -1,0 +1,105 @@
+{% extends "provider/base_provider.html" %}
+
+{% block title %}{{ action_title }} – Booking #SVR{{ booking.id|stringformat:"05d" }}{% endblock %}
+
+{% block provider_content %}
+<div class="provider-topbar">
+  <div>
+    <a href="{% url 'provider_job_detail' booking.id %}" style="font-size: 0.85rem; font-weight: 700; color: #0D6EFD; text-decoration: none; display: inline-flex; align-items: center; gap: 0.35rem; margin-bottom: 0.5rem;">
+      &larr; Back to Job #SVR{{ booking.id|stringformat:"05d" }}
+    </a>
+    <div class="provider-greeting">
+      <h1>{{ action_title }}</h1>
+      <p>Job: {{ booking.service.title }} for {{ booking.customer.get_full_name|default:booking.customer.username }}</p>
+    </div>
+  </div>
+</div>
+
+<div style="max-width: 680px; margin: 0 auto;">
+  <div class="job-detail-card" style="padding: 2rem;">
+    <!-- Transparency Alert -->
+    <div style="background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 12px; padding: 14px 18px; margin-bottom: 24px; font-size: 0.88rem; color: #166534;">
+      <div style="font-weight: 800; margin-bottom: 4px;">Zero Platform Fee Guarantee on Materials</div>
+      <div>Servora retains 0% commission on parts and materials. 100% of approved material costs are reimbursed directly to you upon customer payment.</div>
+    </div>
+
+    <form method="POST" enctype="multipart/form-data">
+      {% csrf_token %}
+
+      {% if form.non_field_errors %}
+        <div style="background: #FEF2F2; border: 1px solid #FECACA; color: #991B1B; padding: 12px 16px; border-radius: 10px; margin-bottom: 20px; font-size: 0.88rem;">
+          {% for err in form.non_field_errors %}{{ err }}<br>{% endfor %}
+        </div>
+      {% endif %}
+
+      <!-- Part Name -->
+      <div class="form-group" style="margin-bottom: 1.25rem;">
+        <label for="id_name" style="display: block; font-size: 0.85rem; font-weight: 700; color: #1E293B; margin-bottom: 0.4rem;">
+          Material / Replacement Part Name *
+        </label>
+        {{ form.name }}
+        {% if form.name.errors %}
+          <div style="color: #DC2626; font-size: 0.8rem; margin-top: 4px;">{{ form.name.errors.0 }}</div>
+        {% endif %}
+      </div>
+
+      <!-- Description -->
+      <div class="form-group" style="margin-bottom: 1.25rem;">
+        <label for="id_description" style="display: block; font-size: 0.85rem; font-weight: 700; color: #1E293B; margin-bottom: 0.4rem;">
+          Specification & Notes (Optional)
+        </label>
+        {{ form.description }}
+        {% if form.description.errors %}
+          <div style="color: #DC2626; font-size: 0.8rem; margin-top: 4px;">{{ form.description.errors.0 }}</div>
+        {% endif %}
+      </div>
+
+      <!-- Quantity and Unit Price Grid -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 1.25rem;">
+        <div class="form-group">
+          <label for="id_quantity" style="display: block; font-size: 0.85rem; font-weight: 700; color: #1E293B; margin-bottom: 0.4rem;">
+            Quantity *
+          </label>
+          {{ form.quantity }}
+          {% if form.quantity.errors %}
+            <div style="color: #DC2626; font-size: 0.8rem; margin-top: 4px;">{{ form.quantity.errors.0 }}</div>
+          {% endif %}
+        </div>
+
+        <div class="form-group">
+          <label for="id_unit_price" style="display: block; font-size: 0.85rem; font-weight: 700; color: #1E293B; margin-bottom: 0.4rem;">
+            Unit Price (₹) *
+          </label>
+          {{ form.unit_price }}
+          {% if form.unit_price.errors %}
+            <div style="color: #DC2626; font-size: 0.8rem; margin-top: 4px;">{{ form.unit_price.errors.0 }}</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Receipt Upload -->
+      <div class="form-group" style="margin-bottom: 1.75rem;">
+        <label for="id_receipt_image" style="display: block; font-size: 0.85rem; font-weight: 700; color: #1E293B; margin-bottom: 0.4rem;">
+          Purchase Receipt / Proof of Cost (Optional)
+        </label>
+        {{ form.receipt_image }}
+        <p style="font-size: 0.75rem; color: #64748B; margin: 4px 0 0;">
+          Supports JPG, PNG, WEBP, PDF (max 5MB). Strictly accessible only to you, the client, and staff.
+        </p>
+        {% if form.receipt_image.errors %}
+          <div style="color: #DC2626; font-size: 0.8rem; margin-top: 4px;">{{ form.receipt_image.errors.0 }}</div>
+        {% endif %}
+      </div>
+
+      <div style="display: flex; gap: 1rem; align-items: center;">
+        <button type="submit" class="btn btn-primary" style="padding: 10px 24px; font-weight: 800;">
+          Save & Propose Material
+        </button>
+        <a href="{% url 'provider_job_detail' booking.id %}" class="btn btn-outline">
+          Cancel
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

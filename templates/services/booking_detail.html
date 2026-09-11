@@ -104,21 +104,146 @@
         {% endif %}
       </div>
 
+      <!-- Additional Materials Approval Card for Customer -->
+      {% if has_pending and is_customer_owner and booking.payment_status != 'paid' and booking.status != 'cancelled' and booking.status != 'declined' %}
+        <div style="background: #FFFBEB; border: 2px solid #F59E0B; border-radius: var(--radius-md); padding: 24px; margin-bottom: 24px;">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+            <span style="font-size: 1.4rem;">⚠️</span>
+            <div>
+              <h3 style="margin: 0; font-size: 1.15rem; font-weight: 800; color: #92400E;">Additional Costs Requested by Provider</h3>
+              <p style="margin: 2px 0 0; font-size: 0.85rem; color: #B45309;">
+                Your service professional has proposed replacement materials/parts required to complete this service. Your explicit approval is required before the final total becomes payable.
+              </p>
+            </div>
+          </div>
+
+          <div style="background: #FFFFFF; border: 1px solid #FDE68A; border-radius: 10px; padding: 14px 18px; margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; font-size: 0.9rem; padding: 4px 0; color: #475569;">
+              <span>Base Agreed Service Charge:</span>
+              <strong>₹{{ booking.service_amount|floatformat:2 }}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.9rem; padding: 4px 0; color: #D97706;">
+              <span>Additional Materials Proposed:</span>
+              <strong>+ ₹{{ pending_total|floatformat:2 }}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 1.05rem; font-weight: 800; border-top: 1px dashed #CBD5E1; padding-top: 8px; margin-top: 6px; color: #1E293B;">
+              <span>New Total Payable if Approved:</span>
+              <span style="color: #0D6EFD;">₹{{ booking.service_amount|add:pending_total|floatformat:2 }}</span>
+            </div>
+          </div>
+
+          <!-- Pending Materials Breakdown List -->
+          <div style="margin-bottom: 18px;">
+            <div style="font-size: 0.82rem; font-weight: 800; text-transform: uppercase; color: #92400E; margin-bottom: 8px;">
+              Proposed Items:
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              {% for mat in materials %}
+                {% if mat.status == 'pending' %}
+                  <div style="display: flex; justify-content: space-between; align-items: center; background: #FEF3C7; padding: 8px 12px; border-radius: 8px; font-size: 0.85rem;">
+                    <div>
+                      <strong style="color: #78350F;">{{ mat.name }}</strong>
+                      <span style="color: #92400E; font-size: 0.78rem;">(Qty: {{ mat.quantity }} × ₹{{ mat.unit_price|floatformat:2 }})</span>
+                      {% if mat.description %}
+                        <div style="font-size: 0.78rem; color: #A16207; font-style: italic;">{{ mat.description }}</div>
+                      {% endif %}
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                      <strong style="color: #78350F;">₹{{ mat.total_price|floatformat:2 }}</strong>
+                      {% if mat.receipt_image %}
+                        <a href="{% url 'secure_material_receipt' mat.id %}" target="_blank" class="btn btn-outline" style="padding: 3px 8px; font-size: 0.72rem; border-color: #D97706; color: #92400E;">
+                          📄 View Receipt
+                        </a>
+                      {% endif %}
+                    </div>
+                  </div>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+            <form method="POST" action="{% url 'customer_approve_materials' booking.id %}">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-primary" style="background: #10B981; border-color: #10B981; font-weight: 800; padding: 10px 20px;">
+                ✓ Approve Additional Costs
+              </button>
+            </form>
+            <form method="POST" action="{% url 'customer_reject_materials' booking.id %}">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-outline" style="color: #DC2626; border-color: #FCA5A5; font-weight: 700; padding: 10px 18px;">
+                ✕ Reject Additional Costs
+              </button>
+            </form>
+          </div>
+        </div>
+      {% endif %}
+
+      <!-- Itemized Materials Ledger (if materials exist) -->
+      {% if materials %}
+        <div style="padding: 20px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle); margin-bottom: 24px; background: #FFFFFF;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+            <h4 style="margin: 0; font-size: 1rem; font-weight: 800; color: #1E293B;">Materials & Replacement Parts</h4>
+            <span style="font-size: 0.8rem; color: #059669; font-weight: 700;">100% reimbursed to provider (0% Servora fee)</span>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            {% for mat in materials %}
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; font-size: 0.88rem;">
+                <div>
+                  <strong style="color: #1E293B;">{{ mat.name }}</strong>
+                  <span style="color: #64748B; font-size: 0.8rem; margin-left: 6px;">(Qty: {{ mat.quantity }} × ₹{{ mat.unit_price|floatformat:2 }})</span>
+                  {% if mat.description %}
+                    <div style="font-size: 0.78rem; color: #64748B;">{{ mat.description }}</div>
+                  {% endif %}
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                  <strong style="color: #1E293B;">₹{{ mat.total_price|floatformat:2 }}</strong>
+                  {% if mat.status == 'approved' %}
+                    <span style="background: #ECFDF5; color: #065F46; border: 1px solid #A7F3D0; font-size: 0.72rem; font-weight: 800; padding: 2px 8px; border-radius: 6px;">Approved</span>
+                  {% elif mat.status == 'pending' %}
+                    <span style="background: #FFFBEB; color: #92400E; border: 1px solid #FDE68A; font-size: 0.72rem; font-weight: 800; padding: 2px 8px; border-radius: 6px;">Awaiting Approval</span>
+                  {% else %}
+                    <span style="background: #FEF2F2; color: #991B1B; border: 1px solid #FECACA; font-size: 0.72rem; font-weight: 800; padding: 2px 8px; border-radius: 6px;">Rejected</span>
+                  {% endif %}
+                  {% if mat.receipt_image %}
+                    <a href="{% url 'secure_material_receipt' mat.id %}" target="_blank" style="font-size: 0.75rem; color: #0D6EFD; text-decoration: none; font-weight: 700;">
+                      📄 Receipt
+                    </a>
+                  {% endif %}
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+
       <!-- Pricing Summary & Platform Transparency -->
       <div style="padding: 20px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle); margin-bottom: 28px;">
         <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.92rem;">
           <span style="color: var(--text-secondary);">Agreed Service Price:</span>
-          <strong>₹{{ booking.total_amount|floatformat:2 }}</strong>
+          <strong>₹{{ booking.service_amount|floatformat:2 }}</strong>
         </div>
+
+        {% if booking.materials_amount > 0 %}
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.92rem; color: #D97706;">
+            <span>Approved Materials & Parts:</span>
+            <strong>+ ₹{{ booking.materials_amount|floatformat:2 }}</strong>
+          </div>
+        {% endif %}
+
         <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.92rem;">
-          <span style="color: var(--text-secondary);">Platform Commission (10%):</span>
+          <span style="color: var(--text-secondary);">Platform Fee (10% of Service):</span>
           <span style="color: #059669; font-weight: 600;">₹{{ booking.commission_amount|floatformat:2 }} (Included)</span>
         </div>
+
         <div style="display: flex; justify-content: space-between; align-items: baseline; padding-top: 12px; margin-top: 12px; border-top: 1px solid var(--border-subtle); font-size: 1.1rem;">
           <strong>Total Payment Due on Completion:</strong>
           <strong style="font-size: 1.45rem; color: var(--accent-primary);">₹{{ booking.total_amount|floatformat:0 }}</strong>
         </div>
       </div>
+
 
       <!-- Customer Review Section -->
       {% if booking.review %}

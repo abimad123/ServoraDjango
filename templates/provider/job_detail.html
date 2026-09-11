@@ -122,6 +122,62 @@
       </div>
     </div>
 
+    <!-- Materials & Replacement Parts Card -->
+    <div class="job-detail-card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; border-bottom: 1px solid #E2E8F0; padding-bottom: 0.75rem;">
+        <h3 style="font-size: 1.1rem; font-weight: 800; color: #1E293B; margin: 0;">
+          Materials & Parts
+        </h3>
+        {% if booking.status == 'accepted' and booking.payment_status != 'paid' %}
+          <a href="{% url 'provider_add_material' booking.id %}" class="btn btn-outline" style="padding: 4px 12px; font-size: 0.8rem; font-weight: 700; color: #0D6EFD; border-color: #BFDBFE;">
+            + Add Materials
+          </a>
+        {% endif %}
+      </div>
+
+      {% if materials %}
+        <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px;">
+          {% for mat in materials %}
+            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px; font-size: 0.85rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <strong style="color: #1E293B;">{{ mat.name }}</strong>
+                <strong style="color: #0F172A;">₹{{ mat.total_price|floatformat:2 }}</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+                <span style="color: #64748B; font-size: 0.78rem;">Qty: {{ mat.quantity }} × ₹{{ mat.unit_price|floatformat:2 }}</span>
+                {% if mat.status == 'approved' %}
+                  <span style="background: #ECFDF5; color: #065F46; font-size: 0.7rem; font-weight: 800; padding: 2px 6px; border-radius: 4px;">✓ Approved</span>
+                {% elif mat.status == 'pending' %}
+                  <span style="background: #FFFBEB; color: #92400E; font-size: 0.7rem; font-weight: 800; padding: 2px 6px; border-radius: 4px;">⏳ Awaiting Approval</span>
+                {% else %}
+                  <span style="background: #FEF2F2; color: #991B1B; font-size: 0.7rem; font-weight: 800; padding: 2px 6px; border-radius: 4px;">✕ Rejected</span>
+                {% endif %}
+              </div>
+              {% if mat.status == 'pending' %}
+                <div style="display: flex; gap: 8px; margin-top: 6px; padding-top: 6px; border-top: 1px dashed #E2E8F0;">
+                  <a href="{% url 'provider_edit_material' mat.id %}" style="font-size: 0.75rem; color: #0D6EFD; text-decoration: none; font-weight: 700;">Edit</a>
+                  <form method="POST" action="{% url 'provider_delete_material' mat.id %}" style="display: inline;" onsubmit="return confirm('Remove this material item?');">
+                    {% csrf_token %}
+                    <button type="submit" style="background: none; border: none; padding: 0; font-size: 0.75rem; color: #DC2626; cursor: pointer; font-weight: 700;">Delete</button>
+                  </form>
+                  {% if mat.receipt_image %}
+                    <a href="{% url 'secure_material_receipt' mat.id %}" target="_blank" style="font-size: 0.75rem; color: #64748B; text-decoration: none; margin-left: auto;">View Receipt</a>
+                  {% endif %}
+                </div>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p style="font-size: 0.85rem; color: #64748B; margin: 0 0 10px;">
+          No additional materials proposed. If replacement parts are needed, use "Add Materials".
+        </p>
+      {% endif %}
+      <div style="font-size: 0.75rem; color: #059669; font-weight: 600;">
+        ℹ️ Servora platform fee is 0% on materials. You receive 100% of approved material costs.
+      </div>
+    </div>
+
     <!-- Payout & Fee Ledger -->
     <div class="job-detail-card">
       <h3 style="font-size: 1.1rem; font-weight: 800; color: #1E293B; margin-bottom: 0.75rem; border-bottom: 1px solid #E2E8F0; padding-bottom: 0.75rem;">
@@ -130,16 +186,26 @@
 
       <div class="financial-breakdown-box" style="margin-top: 0;">
         <div class="financial-row">
-          <span>Customer Booking Price</span>
-          <strong style="color: #1E293B;">₹{{ booking.total_amount|floatformat:2 }}</strong>
+          <span>Service Amount</span>
+          <strong style="color: #1E293B;">₹{{ booking.service_amount|floatformat:2 }}</strong>
         </div>
         <div class="financial-row">
-          <span>Servora Fee ({{ booking.commission_rate }}%)</span>
+          <span>Servora Fee ({{ booking.commission_rate }}% of service)</span>
           <span style="color: #DC2626;">- ₹{{ booking.commission_amount|floatformat:2 }}</span>
         </div>
+        {% if booking.materials_amount > 0 %}
+          <div class="financial-row" style="color: #D97706;">
+            <span>Materials Reimbursement (100%)</span>
+            <strong>+ ₹{{ booking.materials_amount|floatformat:2 }}</strong>
+          </div>
+        {% endif %}
         <div class="financial-row highlight-payout">
-          <span>Your Net Earning</span>
+          <span>Your Total Take-Home</span>
           <span>₹{{ provider_earning|floatformat:2 }}</span>
+        </div>
+        <div style="font-size: 0.75rem; color: #64748B; padding-top: 8px; border-top: 1px dashed #CBD5E1; margin-top: 8px; display: flex; justify-content: space-between;">
+          <span>Payment Status:</span>
+          <strong style="text-transform: capitalize; color: #0F172A;">{{ booking.get_payment_status_display }}</strong>
         </div>
       </div>
 
@@ -166,7 +232,7 @@
             </button>
           </form>
           <p style="font-size: 0.78rem; color: #64748B; text-align: center; margin: 0;">
-            Marking this job completed will add ₹{{ provider_earning|floatformat:0 }} to your earnings balance.
+            Marking this job completed will settle ₹{{ provider_earning|floatformat:0 }} into your earnings ledger.
           </p>
         {% elif booking.status == 'completed' %}
           <div style="background: #ECFDF5; border: 1px solid #A7F3D0; color: #065F46; padding: 1rem; border-radius: 12px; font-weight: 700; font-size: 0.9rem; text-align: center;">
@@ -183,6 +249,7 @@
         {% endif %}
       </div>
     </div>
+
 
   </div>
 

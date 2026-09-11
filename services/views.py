@@ -2,15 +2,16 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.urls import reverse
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.http import JsonResponse, HttpResponse
+from django.http import JsonResponse, HttpResponse, HttpResponseForbidden, FileResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 from django.db.models import Q, Avg, Count, Sum, F, OuterRef, Exists
 from .models import (
     Category, Service, Booking, Review, FeaturedListing, RevenueTransaction, 
-    Notification, create_notification, PaymentTransaction, ProviderSettlement
+    Notification, create_notification, PaymentTransaction, ProviderSettlement,
+    BookingMaterial
 )
-from .forms import BookingCreateForm, ServiceForm, ReviewForm, ProviderPayoutSettingsForm
+from .forms import BookingCreateForm, ServiceForm, ReviewForm, ProviderPayoutSettingsForm, BookingMaterialForm
 from .payment_service import PaymentService, TestGatewayAdapter
 from users.models import UserProfile, ProviderSubscription
 from users.forms import ProviderProfileForm
@@ -413,10 +414,23 @@ def booking_detail_view(request, booking_id):
     if not (is_customer_owner or is_provider_recipient or request.user.is_staff):
         return render(request, '404.html', status=404)
 
+    materials = booking.materials.all().select_related('added_by')
+    has_pending = materials.filter(status='pending').exists()
+    pending_total = materials.filter(status='pending').aggregate(total=Sum('total_price'))['total'] or Decimal('0.00')
+    approved_materials = materials.filter(status='approved')
+    approved_total = approved_materials.aggregate(total=Sum('total_price'))['total'] or Decimal('0.00')
+
     return render(request, 'services/booking_detail.html', {
         'booking': booking,
         'is_customer_owner': is_customer_owner,
+        'is_provider_recipient': is_provider_recipient,
+        'materials': materials,
+        'has_pending': has_pending,
+        'pending_total': pending_total,
+        'approved_materials': approved_materials,
+        'approved_total': approved_total,
     })
+
 
 
 def cancel_booking_view(request, booking_id):
@@ -623,13 +637,20 @@ def provider_job_detail_view(request, booking_id):
         id=booking_id,
         service__provider=provider
     )
-    provider_earning = booking.total_amount - booking.commission_amount
+    provider_earning = booking.provider_earning
+    materials = booking.materials.all().order_by('-created_at')
+    approved_materials_total = booking.approved_materials_total
+    pending_materials_total = booking.pending_materials_total
 
     return render(request, 'provider/job_detail.html', {
         'booking': booking,
         'provider_earning': provider_earning,
+        'materials': materials,
+        'approved_materials_total': approved_materials_total,
+        'pending_materials_total': pending_materials_total,
         'active_tab': 'jobs',
     })
+
 
 
 @provider_required
@@ -1365,9 +1386,10 @@ def commercial_receipt_view(request, booking_id):
         messages.warning(request, "Commercial receipts are generated only for completed service bookings.")
         return redirect('booking_detail', booking_id=booking.id)
 
-    provider_earning = booking.total_amount - booking.commission_amount
+    provider_earning = booking.provider_earning
     review = getattr(booking, 'review', None)
     payment_txn = booking.payment_transactions.filter(status='captured').first()
+    approved_materials = booking.materials.filter(status='approved')
 
     return render(request, 'services/receipt.html', {
         'booking': booking,
@@ -1377,7 +1399,9 @@ def commercial_receipt_view(request, booking_id):
         'provider_earning': provider_earning,
         'review': review,
         'payment_txn': payment_txn,
+        'approved_materials': approved_materials,
     })
+
 
 
 @login_required
@@ -1557,12 +1581,18 @@ def checkout_view(request, booking_id):
         messages.info(request, f"Booking #SVR{booking.id:05d} has already been paid.")
         return redirect('booking_detail', booking_id=booking.id)
 
-    split = PaymentService.calculate_split(booking.total_amount)
+    split = PaymentService.calculate_split(
+        gross_amount=booking.total_amount,
+        materials_amount=getattr(booking, 'materials_amount', Decimal('0.00')),
+        service_amount=getattr(booking, 'service_amount', booking.total_amount)
+    )
     active_txn = PaymentService.create_payment_order(booking, payment_method='upi')
 
-    # Pre-generate valid test gateway signature for test-mode checkout simulation
+    # Pre-generate valid test gateway signature and UPI intent for test-mode checkout simulation
     test_payment_id = f"pay_test_{booking.id}_{int(timezone.now().timestamp())}"
     test_signature = TestGatewayAdapter.generate_signature(active_txn.gateway_order_id, test_payment_id)
+    upi_intent = TestGatewayAdapter.generate_upi_qr_data(active_txn.gateway_order_id, booking.total_amount)
+    approved_materials = booking.materials.filter(status='approved')
 
     return render(request, 'services/checkout.html', {
         'booking': booking,
@@ -1572,7 +1602,11 @@ def checkout_view(request, booking_id):
         'test_payment_id': test_payment_id,
         'test_signature': test_signature,
         'gateway_key_id': TestGatewayAdapter.get_key_id(),
+        'upi_intent': upi_intent,
+        'upi_vpa': 'servora.sandbox@upi',
+        'approved_materials': approved_materials,
     })
+
 
 
 @login_required
@@ -1748,7 +1782,7 @@ def provider_payout_settings_view(request):
 def provider_settlements_view(request):
     """
     Provider settlement ledger displaying pending and paid disbursements
-    for completed customer bookings.
+    for completed customer bookings, itemizing service earnings vs materials reimbursement.
     """
     profile = request.user.profile
     settlements = ProviderSettlement.objects.filter(provider=profile).select_related(
@@ -1759,6 +1793,8 @@ def provider_settlements_view(request):
     paid_total = settlements.filter(status='paid').aggregate(total=Sum('payout_amount'))['total'] or Decimal('0.00')
     gross_total = settlements.filter(status__in=['pending', 'paid']).aggregate(total=Sum('gross_amount'))['total'] or Decimal('0.00')
     commission_total = settlements.filter(status__in=['pending', 'paid']).aggregate(total=Sum('commission_amount'))['total'] or Decimal('0.00')
+    service_total = settlements.filter(status__in=['pending', 'paid']).aggregate(total=Sum('service_amount'))['total'] or Decimal('0.00')
+    materials_total = settlements.filter(status__in=['pending', 'paid']).aggregate(total=Sum('materials_amount'))['total'] or Decimal('0.00')
 
     return render(request, 'provider/settlements.html', {
         'settlements': settlements,
@@ -1766,6 +1802,8 @@ def provider_settlements_view(request):
         'paid_total': paid_total,
         'gross_total': gross_total,
         'commission_total': commission_total,
+        'service_total': service_total,
+        'materials_total': materials_total,
         'active_tab': 'settlements',
     })
 
@@ -1774,7 +1812,8 @@ def provider_settlements_view(request):
 def platform_payments_dashboard_view(request):
     """
     Staff-only platform payment administration dashboard.
-    Visualizes Gross Booking Value, platform commissions, provider settlements, and gateway ledger.
+    Visualizes Gross Booking Value, platform commissions, provider settlements, materials reimbursements,
+    and gateway ledger.
     """
     all_payments = PaymentTransaction.objects.select_related('booking', 'customer', 'provider__user').all()
     all_settlements = ProviderSettlement.objects.select_related('booking', 'provider__user').all()
@@ -1787,11 +1826,16 @@ def platform_payments_dashboard_view(request):
     refunded_count = all_payments.filter(status='refunded').count()
 
     gross_booking_value = successful_payments.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-    platform_commission = (gross_booking_value * Decimal('0.10')).quantize(Decimal('0.01'))
-    provider_payout_total = gross_booking_value - platform_commission
+    service_revenue_basis = all_settlements.filter(status__in=['pending', 'paid']).aggregate(total=Sum('service_amount'))['total'] or Decimal('0.00')
+    materials_reimbursements_total = all_settlements.filter(status__in=['pending', 'paid']).aggregate(total=Sum('materials_amount'))['total'] or Decimal('0.00')
+    platform_commission = all_settlements.filter(status__in=['pending', 'paid']).aggregate(total=Sum('commission_amount'))['total'] or Decimal('0.00')
+    if not platform_commission and gross_booking_value:
+        platform_commission = (service_revenue_basis * Decimal('0.10')).quantize(Decimal('0.01'))
+    provider_payout_total = all_settlements.filter(status__in=['pending', 'paid']).aggregate(total=Sum('payout_amount'))['total'] or (gross_booking_value - platform_commission)
 
     pending_settlements_amount = all_settlements.filter(status='pending').aggregate(total=Sum('payout_amount'))['total'] or Decimal('0.00')
     completed_settlements_amount = all_settlements.filter(status='paid').aggregate(total=Sum('payout_amount'))['total'] or Decimal('0.00')
+    pending_material_approvals_count = BookingMaterial.objects.filter(status='pending').count()
 
     return render(request, 'platform/payments_dashboard.html', {
         'payments': all_payments[:25],
@@ -1802,10 +1846,286 @@ def platform_payments_dashboard_view(request):
         'pending_count': pending_count,
         'refunded_count': refunded_count,
         'gross_booking_value': gross_booking_value,
+        'service_revenue_basis': service_revenue_basis,
+        'materials_reimbursements_total': materials_reimbursements_total,
         'platform_commission': platform_commission,
         'provider_payout_total': provider_payout_total,
         'pending_settlements_amount': pending_settlements_amount,
         'completed_settlements_amount': completed_settlements_amount,
+        'pending_material_approvals_count': pending_material_approvals_count,
         'active_tab': 'payments',
     })
+
+
+# ============================================================
+# STAGE 8B: DYNAMIC PRICING & MATERIALS WORKFLOW VIEWS
+# ============================================================
+
+@provider_required
+def provider_booking_materials_view(request, booking_id):
+    """
+    Lists and manages dynamic material cost proposals for a specific job.
+    """
+    provider = request.user.profile
+    booking = get_object_or_404(
+        Booking.objects.select_related('service', 'customer'),
+        id=booking_id,
+        service__provider=provider
+    )
+    materials = booking.materials.all().order_by('-created_at')
+    approved_total = materials.filter(status='approved').aggregate(total=Sum('total_price'))['total'] or Decimal('0.00')
+    pending_total = materials.filter(status='pending').aggregate(total=Sum('total_price'))['total'] or Decimal('0.00')
+
+    return render(request, 'provider/booking_materials.html', {
+        'booking': booking,
+        'materials': materials,
+        'approved_total': approved_total,
+        'pending_total': pending_total,
+        'active_tab': 'jobs',
+    })
+
+
+@provider_required
+def provider_add_material_view(request, booking_id):
+    """
+    Allows service providers to propose on-the-job physical parts and materials.
+    Enforces positive quantity, minimum unit price, and file security checks.
+    Materials proposal requires customer review and approval.
+    """
+    provider = request.user.profile
+    booking = get_object_or_404(
+        Booking.objects.select_related('service', 'customer'),
+        id=booking_id,
+        service__provider=provider
+    )
+
+    # Security check: Can only add materials while job is in progress ('accepted') and unpaid
+    if booking.status != 'accepted':
+        messages.warning(request, f"Cannot propose materials for a booking in '{booking.get_status_display()}' status.")
+        return redirect('provider_job_detail', booking_id=booking.id)
+
+    if booking.payment_status == 'paid':
+        messages.warning(request, "Cannot propose additional materials for a booking that has already been paid.")
+        return redirect('provider_job_detail', booking_id=booking.id)
+
+    if request.method == 'POST':
+        form = BookingMaterialForm(request.POST, request.FILES)
+        if form.is_valid():
+            material = form.save(commit=False)
+            material.booking = booking
+            material.added_by = request.user
+            material.status = 'pending'
+            material.save()
+
+            create_notification(
+                recipient=booking.customer,
+                notification_type='materials_added',
+                title='Additional Costs Requested',
+                message=f"Provider {request.user.get_full_name() or request.user.username} requested approval for materials: {material.name} (₹{material.total_price:.2f}) on Booking #SVR{booking.id:05d}.",
+                booking=booking,
+                service=booking.service
+            )
+
+            messages.success(request, f"Material '{material.name}' (₹{material.total_price:.2f}) added! Awaiting customer review and approval.")
+            return redirect('provider_job_detail', booking_id=booking.id)
+    else:
+        form = BookingMaterialForm()
+
+    return render(request, 'provider/material_form.html', {
+        'booking': booking,
+        'form': form,
+        'action_title': 'Add Material / Replacement Part',
+        'active_tab': 'jobs',
+    })
+
+
+@provider_required
+def provider_edit_material_view(request, material_id):
+    """
+    Allows service provider to edit a pending material proposal before customer approval.
+    Approved or rejected materials cannot be edited.
+    """
+    provider = request.user.profile
+    material = get_object_or_404(
+        BookingMaterial.objects.select_related('booking', 'booking__service', 'booking__service__provider'),
+        id=material_id,
+        booking__service__provider=provider
+    )
+
+    if material.status != 'pending':
+        messages.error(request, f"Cannot edit material item because it is already {material.get_status_display().lower()}.")
+        return redirect('provider_job_detail', booking_id=material.booking.id)
+
+    if request.method == 'POST':
+        form = BookingMaterialForm(request.POST, request.FILES, instance=material)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f"Material item '{material.name}' updated successfully.")
+            return redirect('provider_job_detail', booking_id=material.booking.id)
+    else:
+        form = BookingMaterialForm(instance=material)
+
+    return render(request, 'provider/material_form.html', {
+        'booking': material.booking,
+        'material': material,
+        'form': form,
+        'action_title': f"Edit Material: {material.name}",
+        'active_tab': 'jobs',
+    })
+
+
+@provider_required
+def provider_delete_material_view(request, material_id):
+    """
+    Allows service provider to remove an unapproved material item.
+    """
+    if request.method != 'POST':
+        messages.error(request, "Invalid request method.")
+        return redirect('provider_jobs')
+
+    provider = request.user.profile
+    material = get_object_or_404(
+        BookingMaterial.objects.select_related('booking', 'booking__service', 'booking__service__provider'),
+        id=material_id,
+        booking__service__provider=provider
+    )
+
+    if material.status == 'approved':
+        messages.error(request, "Cannot delete an approved material item.")
+        return redirect('provider_job_detail', booking_id=material.booking.id)
+
+    name = material.name
+    booking_id = material.booking.id
+    material.delete()
+    messages.success(request, f"Material item '{name}' was removed.")
+    return redirect('provider_job_detail', booking_id=booking_id)
+
+
+@login_required
+def secure_material_receipt_view(request, material_id):
+    """
+    Access-controlled endpoint to view material purchase receipt images/proofs.
+    Accessible strictly by the booking customer, assigned provider, or authorized staff.
+    """
+    material = get_object_or_404(
+        BookingMaterial.objects.select_related('booking', 'booking__customer', 'booking__service__provider__user'),
+        id=material_id
+    )
+
+    is_customer = (material.booking.customer == request.user)
+    is_provider = (material.booking.service.provider.user == request.user)
+    is_staff = request.user.is_staff or request.user.is_superuser
+
+    if not (is_customer or is_provider or is_staff):
+        return HttpResponseForbidden("Access Denied: You are not authorized to view this material receipt.")
+
+    if not material.receipt_image:
+        messages.info(request, "No receipt file is attached to this material item.")
+        if is_provider:
+            return redirect('provider_job_detail', booking_id=material.booking.id)
+        return redirect('booking_detail', booking_id=material.booking.id)
+
+    return FileResponse(material.receipt_image.open('rb'))
+
+
+@login_required
+def customer_approve_materials_view(request, booking_id):
+    """
+    Customer approval action: approves all pending materials on their booking.
+    Recalculates booking.materials_amount, locks booking.final_amount,
+    and updates notification for provider.
+    """
+    if request.method != 'POST':
+        messages.error(request, "Invalid request method.")
+        return redirect('booking_detail', booking_id=booking_id)
+
+    booking = get_object_or_404(
+        Booking.objects.select_related('service', 'service__provider__user'),
+        id=booking_id,
+        customer=request.user
+    )
+
+    if booking.payment_status == 'paid':
+        messages.info(request, "Booking is already paid.")
+        return redirect('booking_detail', booking_id=booking.id)
+
+    pending_items = booking.materials.filter(status='pending')
+    if not pending_items.exists():
+        messages.info(request, "There are no pending material costs to approve.")
+        return redirect('booking_detail', booking_id=booking.id)
+
+    pending_items.update(status='approved')
+
+    # Recalculate materials_amount from all approved items
+    approved_total = booking.materials.filter(status='approved').aggregate(
+        total=Sum('total_price')
+    )['total'] or Decimal('0.00')
+
+    booking.materials_amount = approved_total
+    booking.save()
+
+    create_notification(
+        recipient=booking.service.provider.user,
+        notification_type='materials_approved',
+        title='Materials Approved by Customer',
+        message=f"Customer {request.user.get_full_name() or request.user.username} approved material costs (₹{approved_total:.2f}) for Booking #SVR{booking.id:05d}. Final payable total: ₹{booking.total_amount:.2f}.",
+        booking=booking,
+        service=booking.service
+    )
+
+    messages.success(
+        request, 
+        f"Approved ₹{approved_total:.2f} in material costs. Final payable amount is now ₹{booking.total_amount:.2f}."
+    )
+    return redirect('booking_detail', booking_id=booking.id)
+
+
+@login_required
+def customer_reject_materials_view(request, booking_id):
+    """
+    Customer rejection action: rejects all pending materials on their booking.
+    Preserves original service charge, does not delete rejected records,
+    and notifies provider.
+    """
+    if request.method != 'POST':
+        messages.error(request, "Invalid request method.")
+        return redirect('booking_detail', booking_id=booking_id)
+
+    booking = get_object_or_404(
+        Booking.objects.select_related('service', 'service__provider__user'),
+        id=booking_id,
+        customer=request.user
+    )
+
+    if booking.payment_status == 'paid':
+        messages.info(request, "Booking is already paid.")
+        return redirect('booking_detail', booking_id=booking.id)
+
+    pending_items = booking.materials.filter(status='pending')
+    if not pending_items.exists():
+        messages.info(request, "There are no pending material costs to reject.")
+        return redirect('booking_detail', booking_id=booking.id)
+
+    pending_total = pending_items.aggregate(total=Sum('total_price'))['total'] or Decimal('0.00')
+    pending_items.update(status='rejected')
+
+    # Retain only previously approved materials (or 0)
+    approved_total = booking.materials.filter(status='approved').aggregate(
+        total=Sum('total_price')
+    )['total'] or Decimal('0.00')
+    booking.materials_amount = approved_total
+    booking.save()
+
+    create_notification(
+        recipient=booking.service.provider.user,
+        notification_type='materials_rejected',
+        title='Materials Proposal Declined',
+        message=f"Customer {request.user.get_full_name() or request.user.username} declined the additional material costs (₹{pending_total:.2f}) for Booking #SVR{booking.id:05d}. Payable total remains ₹{booking.total_amount:.2f}.",
+        booking=booking,
+        service=booking.service
+    )
+
+    messages.info(request, "Additional material costs were declined. Your payable amount remains unchanged.")
+    return redirect('booking_detail', booking_id=booking.id)
+
 
