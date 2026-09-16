@@ -73,7 +73,7 @@
     color: #0F172A;
   }
   .sandbox-banner {
-    background: #FEF3C7;
+    background: #FFFBEB;
     border: 1px solid #F59E0B;
     border-radius: 12px;
     padding: 14px 18px;
@@ -94,13 +94,33 @@
     align-items: flex-start;
     gap: 10px;
   }
-  .qr-box {
-    display: inline-block;
-    padding: 16px;
+  .qr-container {
     background: #FFFFFF;
-    border: 2px dashed #0D6EFD;
-    border-radius: 14px;
+    border: 2px solid #0D6EFD;
+    border-radius: 16px;
+    padding: 20px;
     text-align: center;
+    display: inline-block;
+    box-shadow: 0 4px 14px rgba(13, 110, 253, 0.08);
+  }
+  .qr-image {
+    width: 200px;
+    height: 200px;
+    display: block;
+    margin: 0 auto;
+    border-radius: 8px;
+  }
+  @keyframes pulseSlow {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .status-pulse-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    background: #0D6EFD;
+    border-radius: 50%;
+    animation: pulseSlow 1.8s infinite ease-in-out;
   }
 </style>
 {% endblock %}
@@ -121,16 +141,28 @@
       <p style="color: #64748B; margin: 0;">Complete payment for your scheduled local home service securely via Indian UPI.</p>
     </div>
 
-    <!-- Sandbox Mode Banner -->
-    <div class="sandbox-banner">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 2px;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-      <div>
-        <strong style="color: #92400E; font-size: 0.95rem; display: block;">UPI Gateway Sandbox Mode</strong>
-        <span style="color: #B45309; font-size: 0.85rem; line-height: 1.4;">
-          This environment simulates actual UPI order generation, dynamic QR payload generation, and digital signature validation. No bank funds are debited in test mode.
-        </span>
+    <!-- Mode Banner: Test Mode vs Live Mode -->
+    {% if is_test_mode %}
+      <div class="sandbox-banner">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 2px;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <div>
+          <strong style="color: #92400E; font-size: 0.95rem; display: block;">TEST PAYMENT MODE — No real money will be transferred.</strong>
+          <span style="color: #B45309; font-size: 0.84rem; line-height: 1.4;">
+            This environment simulates actual UPI order creation, dynamic QR encoding, and digital webhook verification. The test merchant VPA (<code>{{ upi_vpa }}</code>) cannot receive real bank transfers.
+          </span>
+        </div>
       </div>
-    </div>
+    {% else %}
+      <div style="background: #F0FDF4; border: 1px solid #86EFAC; border-radius: 12px; padding: 14px 18px; margin-bottom: 20px; display: flex; align-items: flex-start; gap: 12px;">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+        <div>
+          <strong style="color: #166534; font-size: 0.95rem; display: block;">LIVE PAYMENT MODE — Official UPI Gateway</strong>
+          <span style="color: #15803D; font-size: 0.84rem;">
+            Payments are securely captured via Servora's official merchant payment rails.
+          </span>
+        </div>
+      </div>
+    {% endif %}
 
     <div class="checkout-grid">
       <!-- Left Column: Service Review & UPI Options -->
@@ -179,7 +211,7 @@
           <!-- Tab Selector: UPI QR vs UPI ID -->
           <div class="upi-tab-group">
             <button type="button" class="upi-tab active" id="tab-qr" onclick="setUpiOption('qr')">
-              📷 Scan UPI QR
+              📷 Scan UPI QR Code
             </button>
             <button type="button" class="upi-tab" id="tab-vpa" onclick="setUpiOption('vpa')">
               ⚡ UPI ID / VPA
@@ -190,33 +222,36 @@
           <div id="panel-qr">
             <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 14px; padding: 22px; text-align: center; margin-bottom: 16px;">
               <div style="font-size: 1rem; font-weight: 800; color: #1E293B; margin-bottom: 4px;">
-                Scan QR with Any UPI App
+                Scan Dynamic QR with Any UPI App
               </div>
               <p style="font-size: 0.85rem; color: #64748B; margin: 0 0 16px;">
-                Compatible with Google Pay, PhonePe, Paytm, BHIM, and all mobile banking UPI apps.
+                Works with Google Pay, PhonePe, Paytm, BHIM, and all mobile banking UPI apps.
               </p>
 
-              <!-- QR Code Display Box -->
-              <div class="qr-box">
-                <svg width="130" height="130" viewBox="0 0 24 24" fill="none" stroke="#0F172A" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="3" y="3" width="7" height="7"></rect>
-                  <rect x="14" y="3" width="7" height="7"></rect>
-                  <rect x="14" y="14" width="7" height="7"></rect>
-                  <rect x="3" y="14" width="7" height="7"></rect>
-                  <line x1="7" y1="7" x2="7.01" y2="7"></line>
-                  <line x1="17" y1="7" x2="17.01" y2="7"></line>
-                  <line x1="7" y1="17" x2="7.01" y2="17"></line>
-                  <line x1="17" y1="17" x2="17.01" y2="17"></line>
-                </svg>
-                <div style="font-size: 0.75rem; color: #0D6EFD; font-weight: 800; margin-top: 8px;">
-                  SCAN TO PAY ₹{{ booking.total_amount|floatformat:2 }}
+              <!-- Real Dynamic QR Code Image -->
+              <div class="qr-container">
+                <img src="{{ qr_base64 }}" alt="Dynamic UPI QR Code for ₹{{ booking.final_amount|floatformat:2 }}" class="qr-image" id="dynamic-qr-img" />
+                <div style="font-size: 0.82rem; color: #0D6EFD; font-weight: 800; margin-top: 10px;">
+                  SCAN TO PAY ₹{{ booking.final_amount|floatformat:2 }}
                 </div>
               </div>
 
-              <div style="margin-top: 14px; font-size: 0.82rem; color: #475569;">
-                <div>Merchant VPA: <strong style="color: #0F172A;">{{ upi_vpa }}</strong></div>
-                <div style="font-size: 0.75rem; color: #94A3B8; word-break: break-all; margin-top: 4px;">
-                  Intent: <code>{{ upi_intent }}</code>
+              <!-- Mobile UPI Intent Deep Link Button -->
+              <div style="margin-top: 16px;">
+                <a href="{{ upi_intent }}" id="btn-open-upi-app" class="btn btn-outline" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 12px; font-weight: 700; border-color: #0D6EFD; color: #0D6EFD; border-radius: 10px;">
+                  📱 Open in UPI App (Mobile Only)
+                </a>
+                <div style="font-size: 0.76rem; color: #64748B; margin-top: 8px; line-height: 1.4; text-align: left;">
+                  💡 <strong>Desktop:</strong> Scan this dynamic QR code using your smartphone's UPI app.<br>
+                  💡 <strong>Mobile:</strong> Tap 'Open in UPI App' above or scan using another phone.
+                </div>
+              </div>
+
+              <div style="margin-top: 16px; font-size: 0.82rem; color: #475569; text-align: left; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 14px;">
+                <div>Merchant Payee: <strong style="color: #0F172A;">{{ merchant_name }}</strong></div>
+                <div>Merchant VPA: <strong style="color: #0D6EFD;">{{ upi_vpa }}</strong></div>
+                <div style="font-size: 0.74rem; color: #94A3B8; word-break: break-all; margin-top: 4px;">
+                  UPI URI: <code>{{ upi_intent }}</code>
                 </div>
               </div>
             </div>
@@ -226,19 +261,22 @@
           <div id="panel-vpa" style="display: none;">
             <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 14px; padding: 22px; margin-bottom: 16px;">
               <div style="font-size: 0.95rem; font-weight: 700; color: #1E293B; margin-bottom: 8px;">
-                Enter Your UPI ID (VPA)
+                Pay via Customer UPI ID (VPA)
               </div>
               <p style="font-size: 0.85rem; color: #64748B; margin: 0 0 14px;">
                 Enter your Virtual Payment Address (e.g. <code>yourname@okhdfcbank</code> or <code>9876543210@upi</code>).
               </p>
               <div style="display: flex; gap: 10px;">
-                <input type="text" id="customer_vpa" class="form-input" placeholder="e.g. mobile@upi" style="flex: 1; padding: 10px 14px; border: 1px solid #CBD5E1; border-radius: 8px;">
+                <input type="text" id="customer_vpa" class="form-input" placeholder="e.g. yourname@okhdfcbank" style="flex: 1; padding: 10px 14px; border: 1px solid #CBD5E1; border-radius: 8px;">
                 <button type="button" class="btn btn-outline" onclick="verifyVpa()" style="font-weight: 700;">
-                  Verify VPA
+                  Validate VPA
                 </button>
               </div>
-              <div id="vpa-status" style="font-size: 0.8rem; margin-top: 8px; color: #059669; display: none;">
-                ✓ UPI ID verified for gateway collection request.
+              <div id="vpa-status" style="font-size: 0.8rem; margin-top: 10px; color: #059669; display: none;">
+                ✓ UPI ID formatted correctly.
+              </div>
+              <div style="background: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 8px; padding: 10px 12px; margin-top: 12px; font-size: 0.78rem; color: #1E40AF; line-height: 1.4;">
+                ℹ️ <strong>Gateway Verification:</strong> Enter a UPI ID only for supported payment flows. Payment status is confirmed strictly by the payment gateway via verified webhook.
               </div>
             </div>
           </div>
@@ -247,14 +285,14 @@
           <div class="security-alert">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
             <div>
-              <strong>Security Guarantee:</strong>
-              Never enter your UPI PIN, OTP, ATM PIN, card numbers, or banking passwords on Servora. UPI authentication occurs strictly within your official UPI application.
+              <strong>Security Protocol:</strong>
+              Never enter your UPI PIN, OTP, ATM PIN, card numbers, or banking passwords on Servora. UPI authentication occurs strictly inside your official UPI app.
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Right Column: Price Breakdown & Action -->
+      <!-- Right Column: Price Breakdown & Automatic Confirmation -->
       <div>
         <div class="checkout-section" style="position: sticky; top: 90px;">
           <div class="checkout-title">
@@ -290,40 +328,50 @@
           </div>
 
           <div class="price-row" style="color: #4F46E5; font-size: 0.88rem;">
-            <span>Provider Share (Earnings + Materials)</span>
+            <span>Provider Share (90% Srv + 100% Mat)</span>
             <span>₹{{ split.payout_amount|floatformat:2 }} (Included)</span>
           </div>
 
           <div class="price-row total">
             <span>Total Payable:</span>
-            <span style="color: #0D6EFD;">₹{{ booking.total_amount|floatformat:0 }}</span>
+            <span style="color: #0D6EFD;">₹{{ booking.final_amount|floatformat:2 }}</span>
           </div>
 
-          <p style="font-size: 0.78rem; color: #94A3B8; margin: 12px 0 20px; line-height: 1.4;">
-            * Servora charges zero commission on materials (100% of material costs are reimbursed to your service provider).
+          <p style="font-size: 0.78rem; color: #94A3B8; margin: 12px 0 16px; line-height: 1.4;">
+            * Servora levies zero commission on materials (100% of material costs are reimbursed to your service professional).
           </p>
 
-          <!-- Primary UPI Payment Confirmation Action -->
-          <form method="POST" action="{% url 'payment_success' booking.id %}" style="margin-bottom: 12px;">
-            {% csrf_token %}
-            <input type="hidden" name="gateway_order_id" value="{{ active_txn.gateway_order_id }}">
-            <input type="hidden" name="gateway_payment_id" value="{{ test_payment_id }}">
-            <input type="hidden" name="gateway_signature" value="{{ test_signature }}">
-            <input type="hidden" name="payment_method" value="upi">
+          <!-- Automatic Payment Status Listener Card -->
+          <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; padding: 14px; text-align: center; margin-bottom: 16px;">
+            <div style="display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 700; font-size: 0.9rem; color: #334155;" id="status-display-row">
+              <span class="status-pulse-dot" id="status-dot"></span>
+              <span id="payment-status-text">Awaiting payment confirmation...</span>
+            </div>
+            <div style="font-size: 0.74rem; color: #94A3B8; margin-top: 4px;">
+              Listening for official gateway webhook confirmation.
+            </div>
+          </div>
 
-            <button type="submit" class="btn btn-primary" style="width: 100%; padding: 14px; font-size: 1.05rem; font-weight: 800; border-radius: 12px; background: #0D6EFD; border-color: #0D6EFD; box-shadow: 0 4px 12px rgba(13, 110, 253, 0.25);">
-              📱 Pay ₹{{ booking.total_amount|floatformat:0 }} via UPI
-            </button>
-          </form>
+          <!-- Test Mode Gateway Simulation Action -->
+          {% if is_test_mode %}
+            <div style="margin-bottom: 12px;">
+              <button type="button" id="btn-simulate-payment" onclick="simulateTestPayment()" class="btn btn-primary" style="width: 100%; padding: 14px; font-size: 0.98rem; font-weight: 800; border-radius: 12px; background: #0D6EFD; border-color: #0D6EFD; box-shadow: 0 4px 12px rgba(13, 110, 253, 0.25);">
+                ⚡ Simulate Gateway Payment (Test Mode)
+              </button>
+              <div style="font-size: 0.75rem; color: #64748B; text-align: center; margin-top: 6px;">
+                Triggers cryptographic HMAC-SHA256 signed webhook to verify payment and settlement.
+              </div>
+            </div>
+          {% endif %}
 
           <!-- Simulated Payment Failure Action for Testing -->
-          <form method="POST" action="{% url 'payment_failed' booking.id %}">
+          <form method="POST" action="{% url 'payment_failed' booking.id %}" style="margin-top: 8px;">
             {% csrf_token %}
             <input type="hidden" name="gateway_order_id" value="{{ active_txn.gateway_order_id }}">
             <input type="hidden" name="failure_reason" value="Simulated UPI payment declined by user">
 
             <button type="submit" class="btn btn-outline" style="width: 100%; padding: 10px; font-size: 0.85rem; border-radius: 10px; color: #DC2626; border-color: #FCA5A5;">
-              Simulate UPI Payment Failure / Cancel
+              Cancel Checkout
             </button>
           </form>
 
@@ -359,6 +407,80 @@
     } else {
       alert('Please enter a valid UPI address (e.g. name@bank)');
     }
+  }
+
+  // Automatic Real-Time Payment Status Polling
+  let pollInterval = setInterval(checkPaymentStatus, 2500);
+
+  function checkPaymentStatus() {
+    fetch("{% url 'payment_status' booking.id %}", {
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.is_paid) {
+        clearInterval(pollInterval);
+        const statusText = document.getElementById('payment-status-text');
+        const statusDot = document.getElementById('status-dot');
+        if (statusText) {
+          statusText.textContent = '✓ Payment verified! Redirecting...';
+          statusText.style.color = '#10B981';
+        }
+        if (statusDot) {
+          statusDot.style.background = '#10B981';
+        }
+        setTimeout(() => {
+          window.location.href = "{% url 'booking_detail' booking.id %}";
+        }, 700);
+      }
+    })
+    .catch(err => console.log('Polling check error:', err));
+  }
+
+  function simulateTestPayment() {
+    const btn = document.getElementById('btn-simulate-payment');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Verifying Webhook Signature...';
+    }
+    const statusText = document.getElementById('payment-status-text');
+    if (statusText) {
+      statusText.textContent = 'Dispatching signed gateway webhook...';
+    }
+
+    fetch("{% url 'payment_simulate' booking.id %}", {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': '{{ csrf_token }}',
+        'Content-Type': 'application/json'
+      }
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.is_paid || data.success) {
+        clearInterval(pollInterval);
+        if (statusText) {
+          statusText.textContent = '✓ Payment confirmed via webhook! Redirecting...';
+          statusText.style.color = '#10B981';
+        }
+        setTimeout(() => {
+          window.location.href = "{% url 'booking_detail' booking.id %}";
+        }, 600);
+      } else {
+        alert('Simulation error: ' + (data.error || 'Failed to simulate payment.'));
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '⚡ Simulate Gateway Payment (Test Mode)';
+        }
+      }
+    })
+    .catch(err => {
+      alert('Simulation network error: ' + err);
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = '⚡ Simulate Gateway Payment (Test Mode)';
+      }
+    });
   }
 </script>
 {% endblock %}

@@ -3050,6 +3050,356 @@ class DynamicPricingAndUPITests(TestCase):
         self.assertFalse(demo_rev.is_rgm_verified)
 
 
+# ============================================================
+# STAGE 8B: SECURITY & PAYMENT HARDENING TESTS (20 TESTS)
+# ============================================================
+
+class Stage8BSecurityAndPaymentHardeningTests(TestCase):
+    """
+    Comprehensive security and verification test suite for Stage 8B UPI payments:
+    1. Customer cannot mark payment paid manually.
+    2. Customer cannot change final amount through POST.
+    3. Customer cannot change payment amount through hidden form fields.
+    4. Invalid webhook signature is rejected.
+    5. Valid webhook marks payment paid.
+    6. Wrong amount webhook does not mark payment paid.
+    7. Wrong order ID does not mark payment paid.
+    8. Wrong currency does not mark payment paid.
+    9. Duplicate webhook does not duplicate transaction.
+    10. Duplicate webhook does not duplicate settlement.
+    11. Duplicate webhook does not duplicate notification.
+    12. Provider UPI ID cannot become merchant VPA.
+    13. QR contains correct merchant VPA.
+    14. QR contains correct dynamic amount.
+    15. Rejected materials are excluded from QR amount.
+    16. Approved materials are included in QR amount.
+    17. Opening UPI intent does not mark payment paid.
+    18. Returning to success URL does not mark payment paid without verification.
+    19. Test payment remains marked as test/simulated.
+    20. UPI-only checkout does not expose card/netbanking payment options.
+    """
+
+    def setUp(self):
+        import json
+        from django.utils import timezone
+        from django.conf import settings
+
+        self.client = Client()
+        self.customer = User.objects.create_user(
+            username='sec_customer',
+            password='password123',
+            first_name='Rohan',
+            last_name='Varma'
+        )
+        self.provider_user = User.objects.create_user(
+            username='sec_provider',
+            password='password123',
+            first_name='Manoj',
+            last_name='Pillai'
+        )
+        self.provider_profile = self.provider_user.profile
+        self.provider_profile.role = 'provider'
+        self.provider_profile.city = 'Kochi'
+        self.provider_profile.payout_upi_id = 'manoj.personal@hdfcbank'
+        self.provider_profile.payout_upi_name = 'Manoj Pillai'
+        self.provider_profile.save()
+
+        self.category = Category.objects.create(name='Carpentry Work', slug='carpentry-work')
+        self.service = Service.objects.create(
+            provider=self.provider_profile,
+            category=self.category,
+            title='Door Fitting & Lock Repair',
+            slug='door-fitting-lock-repair',
+            price=Decimal('1000.00'),
+            description='Door fitting and lock repair service.'
+        )
+        self.booking = Booking.objects.create(
+            customer=self.customer,
+            service=self.service,
+            booking_date=timezone.now().date() + timedelta(days=2),
+            booking_time=time(10, 0),
+            address='MG Road, Kochi',
+            status='accepted',
+            payment_status='unpaid',
+            service_amount=Decimal('1000.00'),
+            materials_amount=Decimal('0.00'),
+            final_amount=Decimal('1000.00'),
+            total_amount=Decimal('1000.00')
+        )
+
+    # 1. Customer cannot mark payment paid manually
+    def test_customer_cannot_mark_paid_manually(self):
+        self.client.login(username='sec_customer', password='password123')
+        # Attempting POST with invalid signature fails
+        response = self.client.post(reverse('payment_success', kwargs={'booking_id': self.booking.id}), {
+            'gateway_order_id': 'fake_order_123',
+            'gateway_payment_id': 'fake_pay_123',
+            'gateway_signature': 'forged_invalid_signature'
+        })
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.payment_status, 'unpaid')
+
+    # 2. Customer cannot change final amount through POST
+    def test_customer_cannot_change_final_amount_through_post(self):
+        self.client.login(username='sec_customer', password='password123')
+        response = self.client.post(reverse('payment_create', kwargs={'booking_id': self.booking.id}), {
+            'amount': '1.00',  # Malicious tampered amount
+            'payment_method': 'upi'
+        })
+        data = response.json()
+        self.assertEqual(Decimal(data['amount']), Decimal('1000.00'))
+
+    # 3. Customer cannot change payment amount through hidden form fields
+    def test_customer_cannot_change_payment_amount_through_hidden_fields(self):
+        self.client.login(username='sec_customer', password='password123')
+        response = self.client.get(reverse('checkout', kwargs={'booking_id': self.booking.id}))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['active_txn'].amount, Decimal('1000.00'))
+
+    # 4. Invalid webhook signature is rejected
+    def test_invalid_webhook_signature_is_rejected(self):
+        import json
+        payload = json.dumps({'event': 'payment.captured'}).encode('utf-8')
+        resp = self.client.post(
+            reverse('payment_webhook'),
+            data=payload,
+            content_type='application/json',
+            HTTP_X_PAYMENT_SIGNATURE='forged_tampered_signature'
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('Invalid webhook signature', resp.json().get('error', ''))
+
+    # 5. Valid webhook marks payment paid
+    def test_valid_webhook_marks_payment_paid(self):
+        import json
+        txn = PaymentService.create_payment_order(self.booking, payment_method='upi')
+        pid = 'pay_sec_valid_555'
+        sig = TestGatewayAdapter.generate_signature(txn.gateway_order_id, pid)
+        payload = json.dumps({
+            'event': 'payment.captured',
+            'payload': {
+                'payment': {
+                    'entity': {
+                        'id': pid,
+                        'order_id': txn.gateway_order_id,
+                        'amount': 1000.00,
+                        'currency': 'INR',
+                        'status': 'captured',
+                        'method': 'upi',
+                        'signature': sig
+                    }
+                }
+            }
+        }).encode('utf-8')
+        wh_sig = TestGatewayAdapter.generate_webhook_signature(payload)
+        resp = self.client.post(
+            reverse('payment_webhook'),
+            data=payload,
+            content_type='application/json',
+            HTTP_X_PAYMENT_SIGNATURE=wh_sig
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.payment_status, 'paid')
+
+    # 6. Wrong amount webhook does not mark payment paid
+    def test_wrong_amount_webhook_does_not_mark_payment_paid(self):
+        import json
+        txn = PaymentService.create_payment_order(self.booking, payment_method='upi')
+        pid = 'pay_underpaid_999'
+        sig = TestGatewayAdapter.generate_signature(txn.gateway_order_id, pid)
+        payload = json.dumps({
+            'event': 'payment.captured',
+            'payload': {
+                'payment': {
+                    'entity': {
+                        'id': pid,
+                        'order_id': txn.gateway_order_id,
+                        'amount': 500.00,  # Underpaid
+                        'currency': 'INR',
+                        'status': 'captured',
+                        'method': 'upi',
+                        'signature': sig
+                    }
+                }
+            }
+        }).encode('utf-8')
+        wh_sig = TestGatewayAdapter.generate_webhook_signature(payload)
+        resp = self.client.post(
+            reverse('payment_webhook'),
+            data=payload,
+            content_type='application/json',
+            HTTP_X_PAYMENT_SIGNATURE=wh_sig
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.payment_status, 'unpaid')
+
+    # 7. Wrong order ID does not mark payment paid
+    def test_wrong_order_id_does_not_mark_payment_paid(self):
+        import json
+        payload = json.dumps({
+            'event': 'payment.captured',
+            'payload': {
+                'payment': {
+                    'entity': {
+                        'id': 'pay_bogus_order',
+                        'order_id': 'order_nonexistent_xyz_999',
+                        'amount': 1000.00,
+                        'currency': 'INR'
+                    }
+                }
+            }
+        }).encode('utf-8')
+        wh_sig = TestGatewayAdapter.generate_webhook_signature(payload)
+        resp = self.client.post(
+            reverse('payment_webhook'),
+            data=payload,
+            content_type='application/json',
+            HTTP_X_PAYMENT_SIGNATURE=wh_sig
+        )
+        self.assertEqual(resp.status_code, 404)
+
+    # 8. Wrong currency does not mark payment paid
+    def test_wrong_currency_does_not_mark_payment_paid(self):
+        import json
+        txn = PaymentService.create_payment_order(self.booking, payment_method='upi')
+        payload = json.dumps({
+            'event': 'payment.captured',
+            'payload': {
+                'payment': {
+                    'entity': {
+                        'id': 'pay_usd_currency',
+                        'order_id': txn.gateway_order_id,
+                        'amount': 1000.00,
+                        'currency': 'USD'  # Invalid currency
+                    }
+                }
+            }
+        }).encode('utf-8')
+        wh_sig = TestGatewayAdapter.generate_webhook_signature(payload)
+        resp = self.client.post(
+            reverse('payment_webhook'),
+            data=payload,
+            content_type='application/json',
+            HTTP_X_PAYMENT_SIGNATURE=wh_sig
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.payment_status, 'unpaid')
+
+    # 9. Duplicate webhook does not duplicate transaction
+    def test_duplicate_webhook_does_not_duplicate_transaction(self):
+        TestGatewayAdapter.simulate_gateway_payment_webhook(self.booking)
+        TestGatewayAdapter.simulate_gateway_payment_webhook(self.booking)
+        self.assertEqual(PaymentTransaction.objects.filter(booking=self.booking, status='captured').count(), 1)
+
+    # 10. Duplicate webhook does not duplicate settlement
+    def test_duplicate_webhook_does_not_duplicate_settlement(self):
+        TestGatewayAdapter.simulate_gateway_payment_webhook(self.booking)
+        TestGatewayAdapter.simulate_gateway_payment_webhook(self.booking)
+        self.assertEqual(ProviderSettlement.objects.filter(booking=self.booking).count(), 1)
+
+    # 11. Duplicate webhook does not duplicate notification
+    def test_duplicate_webhook_does_not_duplicate_notification(self):
+        TestGatewayAdapter.simulate_gateway_payment_webhook(self.booking)
+        TestGatewayAdapter.simulate_gateway_payment_webhook(self.booking)
+        count = Notification.objects.filter(
+            booking=self.booking,
+            recipient=self.provider_user,
+            notification_type='payment_received'
+        ).count()
+        self.assertEqual(count, 1)
+
+    # 12. Provider UPI ID cannot become merchant VPA
+    def test_provider_upi_id_cannot_become_merchant_vpa(self):
+        from django.conf import settings
+        merchant_vpa = TestGatewayAdapter.get_merchant_vpa()
+        self.assertNotEqual(merchant_vpa, self.provider_profile.payout_upi_id)
+        self.assertEqual(merchant_vpa, getattr(settings, 'SERVORA_UPI_ID', 'servora.sandbox@upi'))
+
+    # 13. QR contains correct merchant VPA
+    def test_qr_contains_correct_merchant_vpa(self):
+        import urllib.parse
+        from django.conf import settings
+        self.client.login(username='sec_customer', password='password123')
+        resp = self.client.get(reverse('checkout', kwargs={'booking_id': self.booking.id}))
+        expected_vpa = getattr(settings, 'SERVORA_UPI_ID', 'servora.sandbox@upi')
+        decoded_intent = urllib.parse.unquote(resp.context['upi_intent'])
+        self.assertIn(f"pa={expected_vpa}", decoded_intent)
+
+    # 14. QR contains correct dynamic amount
+    def test_qr_contains_correct_dynamic_amount(self):
+        self.client.login(username='sec_customer', password='password123')
+        resp = self.client.get(reverse('checkout', kwargs={'booking_id': self.booking.id}))
+        self.assertIn("am=1000.00", resp.context['upi_intent'])
+        self.assertIn("cu=INR", resp.context['upi_intent'])
+
+    # 15. Rejected materials are excluded from QR amount
+    def test_rejected_materials_excluded_from_qr_amount(self):
+        BookingMaterial.objects.create(
+            booking=self.booking,
+            name='Faulty Lock',
+            quantity=1,
+            unit_price=Decimal('300.00'),
+            status='rejected'
+        )
+        self.client.login(username='sec_customer', password='password123')
+        resp = self.client.get(reverse('checkout', kwargs={'booking_id': self.booking.id}))
+        self.assertIn("am=1000.00", resp.context['upi_intent'])
+
+    # 16. Approved materials are included in QR amount
+    def test_approved_materials_included_in_qr_amount(self):
+        BookingMaterial.objects.create(
+            booking=self.booking,
+            name='Heavy Brass Lock',
+            quantity=1,
+            unit_price=Decimal('300.00'),
+            status='pending'
+        )
+        self.client.login(username='sec_customer', password='password123')
+        self.client.post(reverse('customer_approve_materials', kwargs={'booking_id': self.booking.id}))
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.final_amount, Decimal('1300.00'))
+        resp = self.client.get(reverse('checkout', kwargs={'booking_id': self.booking.id}))
+        self.assertIn("am=1300.00", resp.context['upi_intent'])
+
+    # 17. Opening UPI intent does not mark payment paid
+    def test_opening_upi_intent_does_not_mark_payment_paid(self):
+        self.client.login(username='sec_customer', password='password123')
+        self.client.get(reverse('checkout', kwargs={'booking_id': self.booking.id}))
+        self.client.get(reverse('checkout_qr', kwargs={'booking_id': self.booking.id}))
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.payment_status, 'unpaid')
+
+    # 18. Returning to success URL does not mark payment paid without verification
+    def test_returning_to_success_url_does_not_mark_payment_paid_without_verification(self):
+        self.client.login(username='sec_customer', password='password123')
+        resp = self.client.get(reverse('payment_success', kwargs={'booking_id': self.booking.id}))
+        self.assertEqual(resp.status_code, 302)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.payment_status, 'unpaid')
+
+    # 19. Test payment remains marked as test simulated
+    def test_test_payment_remains_marked_as_test_simulated(self):
+        TestGatewayAdapter.simulate_gateway_payment_webhook(self.booking)
+        txn = PaymentTransaction.objects.get(booking=self.booking)
+        self.assertEqual(txn.gateway, 'test_gateway')
+        self.assertFalse(RevenueTransaction.objects.filter(booking=self.booking, is_demo=False, verification_status='verified').exists())
+
+    # 20. UPI-only checkout does not expose card netbanking
+    def test_upi_only_checkout_does_not_expose_card_netbanking(self):
+        self.client.login(username='sec_customer', password='password123')
+        resp = self.client.get(reverse('checkout', kwargs={'booking_id': self.booking.id}))
+        content = resp.content.decode('utf-8')
+        self.assertNotIn('Card Number', content)
+        self.assertNotIn('CVV', content)
+        self.assertNotIn('Net Banking', content)
+        self.assertIn('Scan UPI QR', content)
+        self.assertIn('UPI ID / VPA', content)
+
+
+
 
 
 

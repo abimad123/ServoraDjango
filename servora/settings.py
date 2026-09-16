@@ -138,8 +138,14 @@ LOGOUT_REDIRECT_URL = 'home'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Stage 8A: Payment Gateway Configuration (Test / Sandbox Mode)
+# Stage 8A/8B: Payment Gateway Configuration & UPI Settings
+PAYMENT_GATEWAY_MODE = os.environ.get('PAYMENT_GATEWAY_MODE', 'test')  # 'test' or 'live'
+PAYMENT_GATEWAY_PROVIDER = os.environ.get('PAYMENT_GATEWAY_PROVIDER', 'test')
 PAYMENT_GATEWAY_KEY_ID = os.environ.get('PAYMENT_GATEWAY_KEY_ID', 'test_key_servora_sandbox')
 PAYMENT_GATEWAY_KEY_SECRET = os.environ.get('PAYMENT_GATEWAY_KEY_SECRET', 'test_secret_servora_sandbox')
 PAYMENT_GATEWAY_WEBHOOK_SECRET = os.environ.get('PAYMENT_GATEWAY_WEBHOOK_SECRET', 'test_whsec_servora_sandbox')
+
+# Servora Merchant UPI Details (Never confused with individual provider payout VPAs)
+SERVORA_UPI_ID = os.environ.get('SERVORA_UPI_ID', 'servora.sandbox@upi')
+SERVORA_MERCHANT_NAME = os.environ.get('SERVORA_MERCHANT_NAME', 'Servora Marketplace')
 

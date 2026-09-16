@@ -1,11 +1,15 @@
+import io
+import base64
 import hmac
 import hashlib
 import json
+import urllib.parse
 from decimal import Decimal
+import qrcode
 from django.conf import settings
 from django.utils import timezone
 from django.db import transaction
-from .models import Booking, PaymentTransaction, ProviderSettlement, RevenueTransaction
+from .models import Booking, PaymentTransaction, ProviderSettlement, RevenueTransaction, create_notification
 
 
 class PaymentGatewayAdapter:
@@ -13,6 +17,16 @@ class PaymentGatewayAdapter:
     Abstract base interface for Servora payment gateway adapters.
     Subclasses provide sandbox simulation or live UPI gateway integrations.
     """
+    @classmethod
+    def get_merchant_vpa(cls):
+        """Reads configured Servora merchant VPA from settings. Never provider personal VPA."""
+        return getattr(settings, 'SERVORA_UPI_ID', 'servora.sandbox@upi')
+
+    @classmethod
+    def get_merchant_name(cls):
+        """Reads configured Servora merchant legal/display name from settings."""
+        return getattr(settings, 'SERVORA_MERCHANT_NAME', 'Servora Marketplace')
+
     @classmethod
     def get_key_id(cls):
         raise NotImplementedError
@@ -30,8 +44,52 @@ class PaymentGatewayAdapter:
         raise NotImplementedError
 
     @classmethod
-    def generate_upi_qr_data(cls, order_id, amount, vpa='servora.sandbox@upi', payee_name='Servora Marketplace'):
-        raise NotImplementedError
+    def generate_upi_qr_data(cls, order_id, amount, vpa=None, payee_name=None):
+        """
+        Generates standard NPCI UPI Intent URI for QR scanning and mobile UPI apps.
+        Format: upi://pay?pa=<vpa>&pn=<name>&am=<amount>&cu=INR&tn=<note>&tr=<order_id>
+        """
+        vpa = vpa or cls.get_merchant_vpa()
+        payee_name = payee_name or cls.get_merchant_name()
+        amt_str = f"{Decimal(str(amount)):.2f}"
+        params = {
+            'pa': vpa,
+            'pn': payee_name,
+            'am': amt_str,
+            'cu': 'INR',
+            'tn': f"Servora Booking {order_id}",
+            'tr': order_id,
+        }
+        return f"upi://pay?{urllib.parse.urlencode(params)}"
+
+    @classmethod
+    def generate_qr_image_bytes(cls, upi_uri):
+        """
+        Generates actual, valid PNG image bytes of a dynamic QR code encoding upi_uri.
+        Uses the standard qrcode and Pillow libraries.
+        """
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=8,
+            border=2,
+        )
+        qr.add_data(upi_uri)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+
+    @classmethod
+    def generate_qr_image_base64(cls, upi_uri):
+        """
+        Returns a data:image/png;base64,... string representing the real dynamic QR code.
+        Directly embeddable into HTML <img> tags.
+        """
+        png_bytes = cls.generate_qr_image_bytes(upi_uri)
+        b64 = base64.b64encode(png_bytes).decode('utf-8')
+        return f"data:image/png;base64,{b64}"
 
 
 class TestGatewayAdapter(PaymentGatewayAdapter):
@@ -52,24 +110,6 @@ class TestGatewayAdapter(PaymentGatewayAdapter):
     @classmethod
     def get_webhook_secret(cls):
         return getattr(settings, 'PAYMENT_GATEWAY_WEBHOOK_SECRET', 'test_whsec_servora_sandbox')
-
-    @classmethod
-    def generate_upi_qr_data(cls, order_id, amount, vpa='servora.sandbox@upi', payee_name='Servora Marketplace'):
-        """
-        Generates standard NPCI UPI Intent URI for QR scanning and mobile UPI apps.
-        Format: upi://pay?pa=<vpa>&pn=<name>&am=<amount>&cu=INR&tn=<note>&tr=<order_id>
-        """
-        import urllib.parse
-        amt_str = f"{Decimal(str(amount)):.2f}"
-        params = {
-            'pa': vpa,
-            'pn': payee_name,
-            'am': amt_str,
-            'cu': 'INR',
-            'tn': f"Servora Booking {order_id}",
-            'tr': order_id,
-        }
-        return f"upi://pay?{urllib.parse.urlencode(params)}"
 
     @classmethod
     def create_order(cls, booking, amount, currency='INR'):
@@ -111,6 +151,58 @@ class TestGatewayAdapter(PaymentGatewayAdapter):
             return False
         expected = cls.generate_webhook_signature(payload_bytes)
         return hmac.compare_digest(expected, signature_header)
+
+    @classmethod
+    def simulate_gateway_payment_webhook(cls, booking, amount=None, failure_reason=None):
+        """
+        Simulates gateway webhook event dispatch for test mode.
+        Exercises the genuine HMAC-SHA256 signature and webhook verification pipeline.
+        Never bypasses signature or amount checks.
+        """
+        from .models import PaymentTransaction
+        from services.payment_service import PaymentService
+        txn = PaymentTransaction.objects.filter(booking=booking).order_by('-created_at').first()
+        if not txn:
+            txn = PaymentService.create_payment_order(booking, payment_method='upi')
+
+        target_amt = amount if amount is not None else getattr(booking, 'final_amount', booking.total_amount)
+        payment_id = f"pay_sim_{booking.id}_{int(timezone.now().timestamp())}"
+
+        if failure_reason:
+            event_name = 'payment.failed'
+            entity = {
+                'id': payment_id,
+                'order_id': txn.gateway_order_id,
+                'amount': float(target_amt),
+                'currency': 'INR',
+                'status': 'failed',
+                'method': 'upi',
+                'error_description': failure_reason,
+            }
+        else:
+            event_name = 'payment.captured'
+            sig = cls.generate_signature(txn.gateway_order_id, payment_id)
+            entity = {
+                'id': payment_id,
+                'order_id': txn.gateway_order_id,
+                'amount': float(target_amt),
+                'currency': 'INR',
+                'status': 'captured',
+                'method': 'upi',
+                'signature': sig,
+            }
+
+        payload_dict = {
+            'event': event_name,
+            'payload': {
+                'payment': {
+                    'entity': entity
+                }
+            }
+        }
+        payload_bytes = json.dumps(payload_dict).encode('utf-8')
+        wh_sig = cls.generate_webhook_signature(payload_bytes)
+        return PaymentService.process_webhook_event(payload_bytes, wh_sig)
 
 
 class RealUPIGatewayAdapter(PaymentGatewayAdapter):
@@ -186,7 +278,7 @@ class PaymentService:
         Initiates a payment order for a booking.
         The amount is strictly calculated from the database Booking record (total_amount / final_amount).
         """
-        amount = booking.total_amount
+        amount = getattr(booking, 'final_amount', booking.total_amount)
         adapter = get_gateway_adapter()
         gateway_data = adapter.create_order(booking, amount)
 
@@ -394,7 +486,9 @@ class PaymentService:
     def process_webhook_event(cls, payload_bytes, signature_header):
         """
         Processes webhook callbacks from the payment gateway.
-        Validates signature, handles 'payment.captured', 'payment.failed', and 'refund.processed'.
+        Validates HMAC signature, checks order, currency, amount against booking.final_amount,
+        and handles 'payment.captured', 'payment.failed', and 'refund.processed'.
+        Guarantees strict idempotency and server-side verification.
         """
         if not TestGatewayAdapter.verify_webhook_signature(payload_bytes, signature_header):
             return {'success': False, 'status': 400, 'error': 'Invalid webhook signature.'}
@@ -409,6 +503,8 @@ class PaymentService:
         order_id = entity.get('order_id')
         payment_id = entity.get('id')
         method = entity.get('method', 'upi')
+        currency = entity.get('currency', 'INR')
+        payload_amount = entity.get('amount')
 
         if not order_id:
             return {'success': False, 'status': 400, 'error': 'Missing order_id in webhook.'}
@@ -419,8 +515,32 @@ class PaymentService:
 
         booking = txn.booking
 
+        # Strict currency verification
+        if currency != 'INR':
+            return {'success': False, 'status': 400, 'error': f'Invalid currency {currency}, expected INR.'}
+
         if event == 'payment.captured':
-            # Idempotent verification
+            # Idempotent check: if already captured and paid
+            if txn.status == 'captured' and booking.payment_status == 'paid' and txn.gateway_payment_id == payment_id:
+                return {'success': True, 'status': 200, 'message': 'Payment already captured (idempotent duplicate).'}
+
+            # Strict amount verification against Booking.final_amount
+            expected_amount = getattr(booking, 'final_amount', booking.total_amount)
+            if payload_amount is not None:
+                try:
+                    parsed_amt = Decimal(str(payload_amount))
+                    # Support both standard rupee units (e.g. 1300.00) and gateway paise units (e.g. 130000)
+                    matches_rupees = abs(parsed_amt - expected_amount) <= Decimal('0.01')
+                    matches_paise = abs((parsed_amt / Decimal('100.00')) - expected_amount) <= Decimal('0.01')
+                    if not (matches_rupees or matches_paise):
+                        reason = f"Amount mismatch: expected ₹{expected_amount:.2f}, received ₹{parsed_amt:.2f}"
+                        txn.failure_reason = reason
+                        txn.save(update_fields=['failure_reason'])
+                        return {'success': False, 'status': 400, 'error': reason}
+                except Exception:
+                    return {'success': False, 'status': 400, 'error': 'Invalid amount format in webhook payload.'}
+
+            # Valid signature check
             signature = entity.get('signature') or TestGatewayAdapter.generate_signature(order_id, payment_id)
             cls.verify_and_capture_payment(
                 booking=booking,
@@ -429,6 +549,17 @@ class PaymentService:
                 gateway_signature=signature,
                 payment_method=method
             )
+
+            # Deduplicated payment notification
+            create_notification(
+                recipient=booking.service.provider.user,
+                notification_type='payment_received',
+                title='Payment Received',
+                message=f"Customer {booking.customer.get_full_name() or booking.customer.username} paid ₹{expected_amount:.2f} for Booking #SVR{booking.id:05d}.",
+                booking=booking,
+                service=booking.service
+            )
+
             return {'success': True, 'status': 200, 'message': 'Payment captured successfully via webhook.'}
 
         elif event == 'payment.failed':

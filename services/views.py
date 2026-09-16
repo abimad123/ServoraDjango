@@ -1,5 +1,6 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.urls import reverse
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, HttpResponse, HttpResponseForbidden, FileResponse
@@ -1558,8 +1559,9 @@ def checkout_view(request, booking_id):
     """
     Customer checkout screen for a booking.
     Validates customer ownership and displays transparent price breakdown:
-    Total to Pay = Service Price (no extra fees added on top).
-    Platform commission (10%) and Provider Net Earning (90%) are displayed transparently.
+    Total to Pay = Base Service + Approved Materials (no hidden surcharges).
+    Platform commission (10% on service only) and 100% material reimbursement are shown transparently.
+    Real dynamic QR code is generated with server-side final_amount and configured merchant VPA.
     """
     booking = get_object_or_404(
         Booking.objects.select_related('service', 'service__provider', 'service__provider__user', 'customer'),
@@ -1581,18 +1583,24 @@ def checkout_view(request, booking_id):
         messages.info(request, f"Booking #SVR{booking.id:05d} has already been paid.")
         return redirect('booking_detail', booking_id=booking.id)
 
+    final_amt = getattr(booking, 'final_amount', booking.total_amount)
     split = PaymentService.calculate_split(
-        gross_amount=booking.total_amount,
+        gross_amount=final_amt,
         materials_amount=getattr(booking, 'materials_amount', Decimal('0.00')),
-        service_amount=getattr(booking, 'service_amount', booking.total_amount)
+        service_amount=getattr(booking, 'service_amount', final_amt)
     )
     active_txn = PaymentService.create_payment_order(booking, payment_method='upi')
 
-    # Pre-generate valid test gateway signature and UPI intent for test-mode checkout simulation
+    # NPCI UPI Intent URI and Real Dynamic QR Code Image (Base64)
+    upi_intent = TestGatewayAdapter.generate_upi_qr_data(active_txn.gateway_order_id, final_amt)
+    qr_base64 = TestGatewayAdapter.generate_qr_image_base64(upi_intent)
+    approved_materials = booking.materials.filter(status='approved')
+    is_test_mode = (getattr(settings, 'PAYMENT_GATEWAY_MODE', 'test') == 'test')
+    merchant_vpa = TestGatewayAdapter.get_merchant_vpa()
+    merchant_name = TestGatewayAdapter.get_merchant_name()
+
     test_payment_id = f"pay_test_{booking.id}_{int(timezone.now().timestamp())}"
     test_signature = TestGatewayAdapter.generate_signature(active_txn.gateway_order_id, test_payment_id)
-    upi_intent = TestGatewayAdapter.generate_upi_qr_data(active_txn.gateway_order_id, booking.total_amount)
-    approved_materials = booking.materials.filter(status='approved')
 
     return render(request, 'services/checkout.html', {
         'booking': booking,
@@ -1603,17 +1611,84 @@ def checkout_view(request, booking_id):
         'test_signature': test_signature,
         'gateway_key_id': TestGatewayAdapter.get_key_id(),
         'upi_intent': upi_intent,
-        'upi_vpa': 'servora.sandbox@upi',
+        'upi_vpa': merchant_vpa,
+        'merchant_name': merchant_name,
+        'qr_base64': qr_base64,
+        'is_test_mode': is_test_mode,
         'approved_materials': approved_materials,
     })
 
+
+@login_required
+def checkout_qr_view(request, booking_id):
+    """
+    Streams the raw PNG image bytes of the dynamic UPI QR code.
+    Strictly restricted to the booking customer or staff.
+    """
+    booking = get_object_or_404(Booking, id=booking_id)
+    if booking.customer != request.user and not request.user.is_staff:
+        return HttpResponse("Forbidden", status=403)
+
+    active_txn = PaymentService.create_payment_order(booking, payment_method='upi')
+    final_amt = getattr(booking, 'final_amount', booking.total_amount)
+    upi_intent = TestGatewayAdapter.generate_upi_qr_data(active_txn.gateway_order_id, final_amt)
+    png_bytes = TestGatewayAdapter.generate_qr_image_bytes(upi_intent)
+    return HttpResponse(png_bytes, content_type='image/png')
+
+
+@login_required
+def payment_status_view(request, booking_id):
+    """
+    Pollable status endpoint for automatic payment verification.
+    Retrieves current payment status from the database without mutating state.
+    """
+    booking = get_object_or_404(Booking, id=booking_id)
+    if booking.customer != request.user and not request.user.is_staff:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    return JsonResponse({
+        'booking_id': booking.id,
+        'payment_status': booking.payment_status,
+        'is_paid': (booking.payment_status == 'paid'),
+        'final_amount': str(getattr(booking, 'final_amount', booking.total_amount)),
+    })
+
+
+@login_required
+def payment_simulate_view(request, booking_id):
+    """
+    POST-only endpoint for test-mode payment gateway simulation.
+    Triggers the authentic webhook HMAC-SHA256 signature and verification pipeline.
+    Explicitly disabled in live mode.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST method required.'}, status=405)
+
+    if getattr(settings, 'PAYMENT_GATEWAY_MODE', 'test') != 'test':
+        return JsonResponse({'error': 'Simulation is disabled in live gateway mode.'}, status=403)
+
+    booking = get_object_or_404(Booking, id=booking_id, customer=request.user)
+    if booking.payment_status == 'paid':
+        return JsonResponse({'success': True, 'message': 'Booking has already been paid.', 'is_paid': True})
+
+    result = TestGatewayAdapter.simulate_gateway_payment_webhook(booking)
+    booking.refresh_from_db()
+
+    return JsonResponse({
+        'success': result.get('success', False),
+        'status': result.get('status', 200),
+        'is_paid': (booking.payment_status == 'paid'),
+        'payment_status': booking.payment_status,
+        'message': result.get('message', ''),
+        'error': result.get('error', ''),
+    })
 
 
 @login_required
 def payment_create_view(request, booking_id):
     """
     POST endpoint to initialize or re-generate a payment gateway order.
-    Server strictly determines the transaction amount from booking.total_amount.
+    Server strictly determines the transaction amount from booking.final_amount.
     """
     if request.method != 'POST':
         return JsonResponse({'error': 'POST method required.'}, status=405)
@@ -1643,50 +1718,56 @@ def payment_create_view(request, booking_id):
 @login_required
 def payment_success_view(request, booking_id):
     """
-    POST endpoint handling gateway payment verification and capture.
-    Validates HMAC signature, marks booking as paid, and instantiates provider settlement.
+    Gateway payment verification and landing view.
+    Never marks a booking as paid merely because the URL was visited or parameter supplied.
+    Reads verified payment status from the database.
     """
-    if request.method != 'POST':
-        messages.error(request, "Invalid request method.")
-        return redirect('checkout', booking_id=booking_id)
-
     booking = get_object_or_404(Booking, id=booking_id, customer=request.user)
 
-    gateway_order_id = request.POST.get('gateway_order_id')
-    gateway_payment_id = request.POST.get('gateway_payment_id')
-    gateway_signature = request.POST.get('gateway_signature')
-    payment_method = request.POST.get('payment_method', 'upi')
+    if request.method == 'POST':
+        gateway_order_id = request.POST.get('gateway_order_id')
+        gateway_payment_id = request.POST.get('gateway_payment_id')
+        gateway_signature = request.POST.get('gateway_signature')
+        payment_method = request.POST.get('payment_method', 'upi')
 
-    if not (gateway_order_id and gateway_payment_id and gateway_signature):
-        messages.error(request, "Incomplete payment verification parameters.")
-        return redirect('checkout', booking_id=booking.id)
+        if not (gateway_order_id and gateway_payment_id and gateway_signature):
+            messages.error(request, "Incomplete payment verification parameters.")
+            return redirect('checkout', booking_id=booking.id)
 
-    try:
-        PaymentService.verify_and_capture_payment(
-            booking=booking,
-            gateway_order_id=gateway_order_id,
-            gateway_payment_id=gateway_payment_id,
-            gateway_signature=gateway_signature,
-            payment_method=payment_method
-        )
+        try:
+            PaymentService.verify_and_capture_payment(
+                booking=booking,
+                gateway_order_id=gateway_order_id,
+                gateway_payment_id=gateway_payment_id,
+                gateway_signature=gateway_signature,
+                payment_method=payment_method
+            )
 
-        create_notification(
-            recipient=booking.service.provider.user,
-            notification_type='booking_accepted',
-            title='Payment Received',
-            message=f"Customer {booking.customer.get_full_name() or booking.customer.username} paid ₹{booking.total_amount:.2f} for Booking #SVR{booking.id:05d}.",
-            booking=booking,
-            service=booking.service
-        )
+            create_notification(
+                recipient=booking.service.provider.user,
+                notification_type='payment_received',
+                title='Payment Received',
+                message=f"Customer {booking.customer.get_full_name() or booking.customer.username} paid ₹{booking.final_amount:.2f} for Booking #SVR{booking.id:05d}.",
+                booking=booking,
+                service=booking.service
+            )
 
-        messages.success(
-            request, 
-            f"Payment of ₹{booking.total_amount:.2f} confirmed successfully! Reference: {gateway_payment_id}."
-        )
+            messages.success(
+                request, 
+                f"Payment of ₹{booking.final_amount:.2f} confirmed successfully! Reference: {gateway_payment_id}."
+            )
+            return redirect('booking_detail', booking_id=booking.id)
+        except ValueError as e:
+            messages.error(request, f"Payment verification failed: {str(e)}")
+            return redirect('checkout', booking_id=booking.id)
+
+    # GET request: Never self-declares payment paid; reads state strictly from database
+    if booking.payment_status == 'paid':
+        messages.success(request, f"Payment of ₹{booking.final_amount:.2f} is verified and confirmed!")
         return redirect('booking_detail', booking_id=booking.id)
-    except ValueError as e:
-        messages.error(request, f"Payment verification failed: {str(e)}")
-        return redirect('checkout', booking_id=booking.id)
+
+    messages.info(request, "Payment verification in progress. Awaiting confirmation from your UPI app.")
+    return redirect('checkout', booking_id=booking.id)
 
 
 @login_required

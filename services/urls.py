@@ -46,8 +46,11 @@ urlpatterns = [
     path('platform/revenue/evidence/', views.platform_revenue_evidence_view, name='platform_revenue_evidence'),
     path('platform/payments/', views.platform_payments_dashboard_view, name='platform_payments'),
 
-    # Stage 8A: Customer Checkout, Payments & Provider Settlements
+    # Stage 8A/8B: Customer Checkout, Payments & Provider Settlements
     path('checkout/<int:booking_id>/', views.checkout_view, name='checkout'),
+    path('checkout/<int:booking_id>/qr/', views.checkout_qr_view, name='checkout_qr'),
+    path('payments/status/<int:booking_id>/', views.payment_status_view, name='payment_status'),
+    path('payments/simulate/<int:booking_id>/', views.payment_simulate_view, name='payment_simulate'),
     path('payments/create/<int:booking_id>/', views.payment_create_view, name='payment_create'),
     path('payments/success/<int:booking_id>/', views.payment_success_view, name='payment_success'),
     path('payments/failed/<int:booking_id>/', views.payment_failed_view, name='payment_failed'),

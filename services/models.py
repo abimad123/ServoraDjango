@@ -517,7 +517,7 @@ def create_notification(recipient, notification_type, title, message, booking=No
     """
     Creates a database-backed notification for a user with duplicate prevention for critical state transitions.
     """
-    if booking and notification_type in ['booking_created', 'booking_accepted', 'booking_declined', 'booking_cancelled', 'booking_completed']:
+    if booking and notification_type in ['booking_created', 'booking_accepted', 'booking_declined', 'booking_cancelled', 'booking_completed', 'payment_received']:
         if Notification.objects.filter(recipient=recipient, booking=booking, notification_type=notification_type).exists():
             return None
 
